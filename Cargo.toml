@@ -4,6 +4,7 @@ members = [
     "engine/*",
     "generation/*",
     "interfaces/*",
+    "tools/xtask",
 ]
 
 [workspace.package]
