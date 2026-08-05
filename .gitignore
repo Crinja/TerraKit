@@ -1,0 +1,14 @@
+/target/
+/build/
+/dist/
+
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
