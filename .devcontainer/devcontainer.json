@@ -14,6 +14,9 @@
       "installGradle": "false"
     }
   },
+  "containerEnv": {
+    "CARGO_TARGET_DIR": "/home/vscode/.cache/terrakit-target"
+  },
   "customizations": {
     "vscode": {
       "extensions": [
