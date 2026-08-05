@@ -58,3 +58,7 @@ dependencies = [
  "terrakit-core",
  "terrakit-pipeline",
 ]
+
+[[package]]
+name = "terrakit-xtask"
+version = "0.0.1"
