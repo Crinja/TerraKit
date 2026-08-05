@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust
-        run: rustup toolchain install 1.87 --profile minimal --component rustfmt clippy
+        run: rustup toolchain install 1.87 --profile minimal --component rustfmt,clippy
 
       - name: Check tag matches Cargo version
         id: version
