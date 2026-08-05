@@ -34,7 +34,7 @@ jobs:
 
       - name: Check tag matches Cargo version
         id: version
-        run: python scripts/ci/check_tag_version.py "$GITHUB_REF_NAME"
+        run: cargo run --quiet -p terrakit-xtask -- check-tag-version "$GITHUB_REF_NAME"
 
       - name: Run release gate
         run: make release-check
@@ -61,7 +61,7 @@ jobs:
 
       - name: Detect host target
         id: host
-        run: python -c "import os, subprocess; host = [line.split(': ', 1)[1] for line in subprocess.check_output(['rustc', '-vV'], text=True).splitlines() if line.startswith('host: ')][0]; open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8').write(f'target={host}\n')"
+        run: cargo run --quiet -p terrakit-xtask -- host-target
 
       - name: Build release C ABI
         run: cargo build -p terrakit-c-api --all-features --release
@@ -80,7 +80,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          python -c "import os; os.makedirs('build/c', exist_ok=True)"
+          if not exist build\c mkdir build\c
           cl /nologo /W4 /Ibindings\c\include bindings\c\examples\generate_heightfield.c target\release\terrakit.dll.lib /Fe:build\c\generate_heightfield_release_msvc.exe
           cl /nologo /EHsc /TP /Ibindings\c\include /c bindings\c\examples\header_smoke.cpp /Fo:build\c\header_cpp_release_msvc.obj
           dumpbin /exports target\release\terrakit.dll > build\c\exports-release.txt
@@ -93,10 +93,10 @@ jobs:
           build\c\generate_heightfield_release_msvc.exe
 
       - name: Package release C ABI
-        run: python scripts/ci/package_c_api.py --target-dir target/release --target-triple "${{ steps.host.outputs.target }}"
+        run: cargo run --quiet -p terrakit-xtask -- package-c-api --target-dir target/release --target-triple "${{ steps.host.outputs.target }}"
 
       - name: Archive release C ABI
-        run: python scripts/ci/archive_c_package.py --target-triple "${{ steps.host.outputs.target }}"
+        run: cargo run --quiet -p terrakit-xtask -- archive-c-package --target-triple "${{ steps.host.outputs.target }}"
 
       - name: Upload C ABI archive
         uses: actions/upload-artifact@v4

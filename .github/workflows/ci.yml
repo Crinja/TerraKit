@@ -72,7 +72,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          python -c "import os; os.makedirs('build/c', exist_ok=True)"
+          if not exist build\c mkdir build\c
           cl /nologo /W4 /Ibindings\c\include bindings\c\examples\generate_heightfield.c target\debug\terrakit.dll.lib /Fe:build\c\generate_heightfield_msvc.exe
           cl /nologo /EHsc /TP /Ibindings\c\include /c bindings\c\examples\header_smoke.cpp /Fo:build\c\header_cpp_msvc.obj
           dumpbin /exports target\debug\terrakit.dll > build\c\exports.txt
