@@ -1,0 +1,96 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e26aac603f82f4d09a50a373c2bc6fd6, type: 3}
+  m_Name: A4TestGraph
+  m_EditorClassIdentifier: TerraKit.Runtime::TerraKit.TerraKitGraphAsset
+  nodes:
+  - id: 7fcd3054b1c84dc3b3f9d35f1671ee8a
+    typeId: terrakit.height.flat
+    displayName: Flat Height (Backend)
+    position: {x: 50, y: 160}
+    size: {x: 260, y: 180}
+    parameters:
+    - key: elevation
+      displayName: Elevation
+      type: 2
+      value: 0
+    - key: height_axis
+      displayName: Height Axis
+      type: 0
+      value: 0,1,0
+  - id: e2f5ddf2bc864a1194f70140ee131a40
+    typeId: terrakit.height.noise
+    displayName: Noise Height (Backend)
+    position: {x: 398, y: 189}
+    size: {x: 282, y: 291}
+    parameters:
+    - key: algorithm
+      displayName: Algorithm
+      type: 0
+      value: value
+    - key: octaves
+      displayName: Octaves
+      type: 1
+      value: 4
+    - key: frequency
+      displayName: Frequency
+      type: 2
+      value: 0.08
+    - key: lacunarity
+      displayName: Lacunarity
+      type: 2
+      value: 2
+    - key: persistence
+      displayName: Persistence
+      type: 2
+      value: 0.5
+    - key: amplitude
+      displayName: Amplitude
+      type: 2
+      value: 10
+    - key: normalize
+      displayName: Normalize
+      type: 3
+      value: true
+    - key: seed_domain
+      displayName: Seed Domain
+      type: 1
+      value: 0
+    - key: mode
+      displayName: Mode
+      type: 0
+      value: add
+  - id: fe1f91d2d7f94305856922fa375c006a
+    typeId: terrakit.mesh.height_field
+    displayName: Heightfield Mesh (Backend)
+    position: {x: 730, y: 160}
+    size: {x: 260, y: 180}
+    parameters:
+    - key: generate_normals
+      displayName: Generate Normals
+      type: 3
+      value: true
+    - key: generate_texcoords
+      displayName: Generate Texcoords
+      type: 3
+      value: true
+  edges:
+  - id: ad2b635edd7b404882a0683095f11bb3
+    outputNodeId: 7fcd3054b1c84dc3b3f9d35f1671ee8a
+    outputPortId: height
+    inputNodeId: e2f5ddf2bc864a1194f70140ee131a40
+    inputPortId: source
+  - id: 28d919e3f5c944bbb0597c6811c64c33
+    outputNodeId: e2f5ddf2bc864a1194f70140ee131a40
+    outputPortId: height
+    inputNodeId: fe1f91d2d7f94305856922fa375c006a
+    inputPortId: height
