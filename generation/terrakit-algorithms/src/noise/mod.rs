@@ -7,10 +7,16 @@
 
 mod builtin;
 mod fractal;
+mod perlin;
+mod simplex;
 mod traits;
 mod value;
+mod worley;
 
 pub use builtin::*;
 pub use fractal::*;
+pub use perlin::*;
+pub use simplex::*;
 pub use traits::*;
 pub use value::*;
+pub use worley::*;
