@@ -85,7 +85,7 @@ fn ports_parameters_defaults_bounds_and_enum_options_are_visible() {
     assert_eq!(algorithm.kind, TK_PARAMETER_KIND_ENUM);
     assert_eq!(algorithm.has_default, TK_TRUE);
     assert_eq!(view_text(algorithm.default_value.text_value), "value");
-    assert_eq!(algorithm.enum_option_count, 1);
+    assert_eq!(algorithm.enum_option_count, 4);
 
     let mut option = TkEnumOptionInfo::default();
     assert_ok(tk_stage_registry_get_enum_option(
@@ -96,6 +96,33 @@ fn ports_parameters_defaults_bounds_and_enum_options_are_visible() {
         &mut option,
     ));
     assert_eq!(view_text(option.id), "value");
+
+    assert_ok(tk_stage_registry_get_enum_option(
+        registry,
+        noise_index,
+        0,
+        1,
+        &mut option,
+    ));
+    assert_eq!(view_text(option.id), "perlin");
+
+    assert_ok(tk_stage_registry_get_enum_option(
+        registry,
+        noise_index,
+        0,
+        2,
+        &mut option,
+    ));
+    assert_eq!(view_text(option.id), "simplex");
+
+    assert_ok(tk_stage_registry_get_enum_option(
+        registry,
+        noise_index,
+        0,
+        3,
+        &mut option,
+    ));
+    assert_eq!(view_text(option.id), "worley");
 
     let mut octaves = TkParameterInfo::default();
     assert_ok(tk_stage_registry_get_parameter(

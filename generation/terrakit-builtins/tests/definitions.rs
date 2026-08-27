@@ -171,7 +171,10 @@ fn noise_height_schema_snapshot_is_stable() {
     );
 
     let algorithm = schema.parameter(&parameter("algorithm")).unwrap();
-    assert_eq!(enum_option_ids(algorithm.value_type()), vec!["value"]);
+    assert_eq!(
+        enum_option_ids(algorithm.value_type()),
+        vec!["value", "perlin", "simplex", "worley"]
+    );
     assert_eq!(
         algorithm.default(),
         Some(&ParameterValue::Enum(enum_value("value")))
@@ -473,6 +476,51 @@ fn noise_height_definition_schema_and_default_factory_are_valid() {
             ResourceKind::HeightField,
         )]
     );
+}
+
+#[test]
+fn noise_height_definition_builds_all_algorithm_options() {
+    for algorithm in ["value", "perlin", "simplex", "worley"] {
+        let definition = NoiseHeightDefinition::new().unwrap();
+        let schema = definition.schema();
+        let mut supplied = ParameterSet::new();
+        supplied.set(
+            parameter("algorithm"),
+            ParameterValue::Enum(enum_value(algorithm)),
+        );
+        supplied.set(parameter("frequency"), ParameterValue::F64(0.2));
+        supplied.set(parameter("amplitude"), ParameterValue::F32(0.5));
+        let parameters = schema.resolve_parameters(&supplied).unwrap();
+        let bindings = ValidatedStageBindings::validate(
+            schema,
+            &terrakit_pipeline::StageBindings::new()
+                .with_input(port("source"), BASE_HEIGHT)
+                .unwrap()
+                .with_output(port("height"), NOISY_HEIGHT)
+                .unwrap(),
+        )
+        .unwrap();
+        let mut stage = definition
+            .build(StageId(2), &parameters, &bindings)
+            .unwrap();
+        let mut resources = ResourceSet::new();
+        resources.insert(
+            BASE_HEIGHT,
+            TerrainResource::HeightField(source_height_field(0.0)),
+        );
+
+        stage.execute(&context(), &mut resources).unwrap();
+
+        let output = resources.height_field(NOISY_HEIGHT).unwrap();
+        assert!(
+            output.values().iter().all(|value| value.is_finite()),
+            "{algorithm} produced non-finite height values"
+        );
+        assert!(
+            output.values().iter().any(|value| *value != 0.0),
+            "{algorithm} did not affect the height field"
+        );
+    }
 }
 
 #[test]
