@@ -51,7 +51,20 @@ impl NoiseHeightDefinition {
                         "Algorithm",
                         "Built-in deterministic noise algorithm.",
                         ParameterType::Enum {
-                            options: vec![enum_option("value", "Value", "Coherent value noise.")?],
+                            options: vec![
+                                enum_option("value", "Value", "Coherent value noise.")?,
+                                enum_option(
+                                    "perlin",
+                                    "Perlin",
+                                    "Coherent gradient noise using Perlin-style lattice gradients.",
+                                )?,
+                                enum_option(
+                                    "simplex",
+                                    "Simplex",
+                                    "Coherent gradient noise using a simplex lattice.",
+                                )?,
+                                enum_option("worley", "Worley", "Signed cellular distance noise.")?,
+                            ],
                         },
                         Some(ParameterValue::Enum(enum_value_id("value")?)),
                     )?,
@@ -192,6 +205,9 @@ impl StageDefinition for NoiseHeightDefinition {
 fn noise_algorithm(value: &EnumValueId) -> Result<NoiseAlgorithm, StageBuildError> {
     match value.as_str() {
         "value" => Ok(NoiseAlgorithm::Value),
+        "perlin" => Ok(NoiseAlgorithm::Perlin),
+        "simplex" => Ok(NoiseAlgorithm::Simplex),
+        "worley" => Ok(NoiseAlgorithm::Worley),
         other => Err(StageBuildError::new(format!(
             "unknown noise algorithm enum id '{other}'"
         ))),
