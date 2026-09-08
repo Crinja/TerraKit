@@ -41,10 +41,11 @@ mod tests {
     use crate::TK_STATUS_OK;
 
     #[test]
-    fn abi_version_is_stable_initial_release() {
-        assert_eq!(ABI_VERSION.major, 1);
-        assert_eq!(ABI_VERSION.minor, 0);
-        assert_eq!(ABI_VERSION.patch, 0);
+    fn abi_version_is_current_development_version() {
+        assert_eq!(
+            (ABI_VERSION.major, ABI_VERSION.minor, ABI_VERSION.patch),
+            (0, 1, 0)
+        );
     }
 
     #[test]

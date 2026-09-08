@@ -4,14 +4,14 @@ version = 4
 
 [[package]]
 name = "terrakit-algorithms"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "terrakit-core",
 ]
 
 [[package]]
 name = "terrakit-builtins"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "terrakit-algorithms",
  "terrakit-core",
@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "terrakit-c-api"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "terrakit-builtins",
  "terrakit-core",
@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "terrakit-console"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "terrakit-algorithms",
  "terrakit-builtins",
@@ -42,18 +42,18 @@ dependencies = [
 
 [[package]]
 name = "terrakit-core"
-version = "0.0.1"
+version = "0.0.2"
 
 [[package]]
 name = "terrakit-pipeline"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "terrakit-core",
 ]
 
 [[package]]
 name = "terrakit-runtime"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "terrakit-core",
  "terrakit-pipeline",
@@ -61,4 +61,4 @@ dependencies = [
 
 [[package]]
 name = "terrakit-xtask"
-version = "0.0.1"
+version = "0.0.2"
