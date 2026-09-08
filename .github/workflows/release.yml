@@ -19,105 +19,485 @@ jobs:
   validate:
     name: Validate Release
     runs-on: ubuntu-latest
+
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Install Rust
-        run: rustup toolchain install 1.87 --profile minimal --component rustfmt,clippy
+        run: |
+          rustup toolchain install 1.87 \
+            --profile minimal \
+            --component rustfmt,clippy
 
       - name: Check tag matches Cargo version
         id: version
-        run: cargo run --quiet -p terrakit-xtask -- check-tag-version "$GITHUB_REF_NAME"
+        run: >
+          cargo run
+          --quiet
+          -p terrakit-xtask
+          --
+          check-tag-version
+          "$GITHUB_REF_NAME"
+
+      - name: Check Godot plugin version
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import configparser
+          import os
+          from pathlib import Path
+
+          plugin_cfg = Path(
+              "interfaces/terrakit-godot/"
+              "addon/addons/terrakit/plugin.cfg"
+          )
+
+          if not plugin_cfg.is_file():
+              raise SystemExit(
+                  f"Godot plugin.cfg not found: {plugin_cfg}"
+              )
+
+          config = configparser.ConfigParser()
+          config.read(plugin_cfg)
+
+          plugin_version = (
+              config["plugin"]["version"]
+              .strip()
+              .strip('"')
+              .strip("'")
+          )
+
+          tag_version = os.environ["GITHUB_REF_NAME"]
+
+          if tag_version.startswith("v"):
+              tag_version = tag_version[1:]
+
+          if plugin_version != tag_version:
+              raise SystemExit(
+                  "Godot plugin version does not match release tag:\n"
+                  f"  plugin.cfg: {plugin_version}\n"
+                  f"  tag:        {tag_version}"
+              )
+
+          print(
+              f"Godot plugin version matches tag: "
+              f"{plugin_version}"
+          )
+          PY
 
       - name: Run release gate
         run: make release-check
 
   c-artifacts:
     name: C ABI Artifacts (${{ matrix.os }})
-    needs: validate
+    needs:
+      - validate
+
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
+
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
-        run: rustup toolchain install 1.87 --profile minimal
+        run: |
+          rustup toolchain install 1.87 --profile minimal
 
       - name: Configure MSVC
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
 
       - name: Detect host target
         id: host
-        run: cargo run --quiet -p terrakit-xtask -- host-target
+        run: >
+          cargo run
+          --quiet
+          -p terrakit-xtask
+          --
+          host-target
 
       - name: Build release C ABI
-        run: cargo build -p terrakit-c-api --all-features --release
+        run: >
+          cargo build
+          -p terrakit-c-api
+          --all-features
+          --release
 
       - name: Install cbindgen
-        run: cargo install cbindgen --version 0.29.0 --locked
+        run: >
+          cargo install
+          cbindgen
+          --version 0.29.0
+          --locked
 
       - name: Check generated C header
-        run: cbindgen --verify --config engine/terrakit-c-api/cbindgen.toml --crate terrakit-c-api --output bindings/c/include/terrakit.h
+        run: >
+          cbindgen
+          --verify
+          --config engine/terrakit-c-api/cbindgen.toml
+          --crate terrakit-c-api
+          --output bindings/c/include/terrakit.h
 
       - name: Release C smoke test
         if: runner.os != 'Windows'
-        run: make TARGET_DIR=target/release CARGO_BUILD_FLAGS=--release c-symbol-check c-example
+        run: >
+          make
+          TARGET_DIR=target/release
+          CARGO_BUILD_FLAGS=--release
+          c-symbol-check
+          c-example
 
       - name: Release C smoke test
         if: runner.os == 'Windows'
         shell: cmd
         run: |
           if not exist build\c mkdir build\c
-          cl /nologo /W4 /Ibindings\c\include bindings\c\examples\generate_heightfield.c target\release\terrakit.dll.lib /Fe:build\c\generate_heightfield_release_msvc.exe
-          cl /nologo /EHsc /TP /Ibindings\c\include /c bindings\c\examples\header_smoke.cpp /Fo:build\c\header_cpp_release_msvc.obj
+
+          cl /nologo /W4 ^
+            /Ibindings\c\include ^
+            bindings\c\examples\generate_heightfield.c ^
+            target\release\terrakit.dll.lib ^
+            /Fe:build\c\generate_heightfield_release_msvc.exe
+
+          cl /nologo /EHsc /TP ^
+            /Ibindings\c\include ^
+            /c bindings\c\examples\header_smoke.cpp ^
+            /Fo:build\c\header_cpp_release_msvc.obj
+
           dumpbin /exports target\release\terrakit.dll > build\c\exports-release.txt
+
           findstr /C:"tk_get_abi_version" build\c\exports-release.txt
           findstr /C:"tk_stage_registry_create_builtin" build\c\exports-release.txt
           findstr /C:"tk_pipeline_assembler_finish" build\c\exports-release.txt
           findstr /C:"tk_runtime_generate_2d" build\c\exports-release.txt
           findstr /C:"tk_generation_result_get_mesh" build\c\exports-release.txt
+
           set PATH=%CD%\target\release;%PATH%
+
           build\c\generate_heightfield_release_msvc.exe
 
       - name: Package release C ABI
-        run: cargo run --quiet -p terrakit-xtask -- package-c-api --target-dir target/release --target-triple "${{ steps.host.outputs.target }}"
+        run: >
+          cargo run
+          --quiet
+          -p terrakit-xtask
+          --
+          package-c-api
+          --target-dir target/release
+          --target-triple "${{ steps.host.outputs.target }}"
 
       - name: Archive release C ABI
-        run: cargo run --quiet -p terrakit-xtask -- archive-c-package --target-triple "${{ steps.host.outputs.target }}"
+        run: >
+          cargo run
+          --quiet
+          -p terrakit-xtask
+          --
+          archive-c-package
+          --target-triple "${{ steps.host.outputs.target }}"
 
       - name: Upload C ABI archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: terrakit-c-api-${{ needs.validate.outputs.version }}-${{ steps.host.outputs.target }}
+          name: >-
+            terrakit-c-api-${{
+              needs.validate.outputs.version
+            }}-${{
+              steps.host.outputs.target
+            }}
           path: |
             dist/archives/*.zip
             dist/archives/*.sha256
           if-no-files-found: error
 
-  github-release:
-    name: Publish GitHub Release
-    needs: [validate, c-artifacts]
+  godot-artifacts:
+    name: Godot Artifacts (${{ matrix.name }})
+    needs:
+      - validate
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            godot_platform: linux
+
+          - name: Windows x86_64
+            os: windows-latest
+            godot_platform: windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Show submodule state
+        run: git submodule status --recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install SCons
+        run: python -m pip install --upgrade scons
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.87 --profile minimal
+
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+
+      - name: Build optimized TerraKit C ABI
+        run: >
+          cargo build
+          -p terrakit-c-api
+          --all-features
+          --release
+
+      - name: Build Godot debug library
+        run: >
+          scons
+          -C interfaces/terrakit-godot
+          platform=${{ matrix.godot_platform }}
+          target=template_debug
+          arch=x86_64
+          terrakit_profile=release
+
+      - name: Build Godot release library
+        run: >
+          scons
+          -C interfaces/terrakit-godot
+          platform=${{ matrix.godot_platform }}
+          target=template_release
+          arch=x86_64
+          terrakit_profile=release
+
+      - name: Verify Linux binaries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="interfaces/terrakit-godot/addon/addons/terrakit/bin/linux"
+
+          test -f "$BASE/libterrakit.so"
+
+          test -f \
+            "$BASE/libterrakit_godot.linux.template_debug.x86_64.so"
+
+          test -f \
+            "$BASE/libterrakit_godot.linux.template_release.x86_64.so"
+
+          echo "Linux Godot release files:"
+          find "$BASE" -maxdepth 1 -type f -print
+
+      - name: Verify Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $base = "interfaces/terrakit-godot/addon/addons/terrakit/bin/windows"
+
+          $required = @(
+              "$base/terrakit.dll",
+              "$base/terrakit_godot.windows.template_debug.x86_64.dll",
+              "$base/terrakit_godot.windows.template_release.x86_64.dll"
+          )
+
+          foreach ($path in $required) {
+              if (-not (Test-Path $path)) {
+                  throw "Required release artifact missing: $path"
+              }
+          }
+
+          Write-Host "Windows Godot release files:"
+
+          Get-ChildItem $base
+
+      - name: Upload Godot platform binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: >-
+            terrakit-godot-bin-${{
+              matrix.godot_platform
+            }}-x86_64
+          path: >-
+            interfaces/terrakit-godot/addon/addons/terrakit/bin/
+          if-no-files-found: error
+
+  godot-package:
+    name: Package Godot Plugin
+    needs:
+      - validate
+      - godot-artifacts
+
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download C ABI archives
-        uses: actions/download-artifact@v4
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Create staging directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/godot/addons
+
+          cp -a \
+            interfaces/terrakit-godot/addon/addons/terrakit \
+            dist/godot/addons/
+
+          rm -rf dist/godot/addons/terrakit/bin
+
+          mkdir -p dist/godot/addons/terrakit/bin
+
+      - name: Download platform binaries
+        uses: actions/download-artifact@v8
         with:
+          pattern: terrakit-godot-bin-*
+          path: dist/godot/addons/terrakit/bin
+          merge-multiple: true
+
+      - name: Verify packaged addon
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="dist/godot/addons/terrakit"
+
+          test -f "$BASE/plugin.cfg"
+          test -f "$BASE/terrakit_plugin.gd"
+          test -f "$BASE/terrakit.gdextension"
+
+          test -f \
+            "$BASE/bin/linux/libterrakit.so"
+
+          test -f \
+            "$BASE/bin/linux/libterrakit_godot.linux.template_debug.x86_64.so"
+
+          test -f \
+            "$BASE/bin/linux/libterrakit_godot.linux.template_release.x86_64.so"
+
+          test -f \
+            "$BASE/bin/windows/terrakit.dll"
+
+          test -f \
+            "$BASE/bin/windows/terrakit_godot.windows.template_debug.x86_64.dll"
+
+          test -f \
+            "$BASE/bin/windows/terrakit_godot.windows.template_release.x86_64.dll"
+
+          echo
+          echo "Final Godot addon:"
+          find "$BASE" -type f -print | sort
+
+      - name: Create Godot plugin ZIP
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/release
+
+          cd dist/godot
+
+          zip -r \
+            "../release/terrakit-godot-v${VERSION}.zip" \
+            addons
+
+          cd ../release
+
+          sha256sum \
+            "terrakit-godot-v${VERSION}.zip" \
+            > "terrakit-godot-v${VERSION}.zip.sha256"
+
+      - name: Inspect archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          unzip -l \
+            "dist/release/terrakit-godot-v${VERSION}.zip"
+
+      - name: Upload packaged Godot plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: >-
+            terrakit-godot-package-${{
+              needs.validate.outputs.version
+            }}
+          path: |
+            dist/release/terrakit-godot-*.zip
+            dist/release/terrakit-godot-*.sha256
+          if-no-files-found: error
+
+  github-release:
+    name: Publish GitHub Release
+
+    needs:
+      - validate
+      - c-artifacts
+      - godot-package
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create release directory
+        run: mkdir -p dist/release
+
+      - name: Download C ABI archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: terrakit-c-api-*
           path: dist/release
           merge-multiple: true
+
+      - name: Download Godot package
+        uses: actions/download-artifact@v8
+        with:
+          name: >-
+            terrakit-godot-package-${{
+              needs.validate.outputs.version
+            }}
+          path: dist/release
+
+      - name: Show release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Publishing:"
+          find dist/release -maxdepth 1 -type f -print | sort
 
       - name: Publish release assets
         env:
@@ -125,12 +505,25 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+
+        shell: bash
         run: |
+          set -euo pipefail
+
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/release/* --clobber
+
+            gh release upload \
+              "$RELEASE_TAG" \
+              dist/release/* \
+              --clobber
+
           else
-            gh release create "$RELEASE_TAG" dist/release/* \
+
+            gh release create \
+              "$RELEASE_TAG" \
+              dist/release/* \
               --title "TerraKit $RELEASE_VERSION" \
-              --notes "Automated release for $RELEASE_TAG." \
+              --generate-notes \
               --verify-tag
+
           fi

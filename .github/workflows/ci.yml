@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "**"
+
   pull_request:
 
 permissions:
@@ -23,10 +24,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
-        run: rustup toolchain install 1.87 --profile minimal --component rustfmt,clippy
+        run: |
+          rustup toolchain install 1.87 \
+            --profile minimal \
+            --component rustfmt,clippy
 
       - name: Run full CI gate
         run: make ci
@@ -34,21 +38,26 @@ jobs:
   platform-smoke:
     name: Platform Smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
+
       matrix:
-        os: [windows-latest, macos-latest]
+        os:
+          - windows-latest
+          - macos-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
-        run: rustup toolchain install 1.87 --profile minimal
+        run: |
+          rustup toolchain install 1.87 --profile minimal
 
       - name: Configure MSVC
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@v1.13.0
 
       - name: Test workspace
         run: cargo test --workspace --all-features
@@ -62,24 +71,148 @@ jobs:
 
       - name: Install cbindgen
         if: runner.os == 'Windows'
-        run: cargo install cbindgen --version 0.29.0 --locked
+        run: |
+          cargo install cbindgen \
+            --version 0.29.0 \
+            --locked
 
       - name: Check C header
         if: runner.os == 'Windows'
-        run: cbindgen --verify --config engine/terrakit-c-api/cbindgen.toml --crate terrakit-c-api --output bindings/c/include/terrakit.h
+        run: >
+          cbindgen
+          --verify
+          --config engine/terrakit-c-api/cbindgen.toml
+          --crate terrakit-c-api
+          --output bindings/c/include/terrakit.h
 
       - name: Native C smoke test
         if: runner.os == 'Windows'
         shell: cmd
         run: |
           if not exist build\c mkdir build\c
-          cl /nologo /W4 /Ibindings\c\include bindings\c\examples\generate_heightfield.c target\debug\terrakit.dll.lib /Fe:build\c\generate_heightfield_msvc.exe
-          cl /nologo /EHsc /TP /Ibindings\c\include /c bindings\c\examples\header_smoke.cpp /Fo:build\c\header_cpp_msvc.obj
+
+          cl /nologo /W4 ^
+            /Ibindings\c\include ^
+            bindings\c\examples\generate_heightfield.c ^
+            target\debug\terrakit.dll.lib ^
+            /Fe:build\c\generate_heightfield_msvc.exe
+
+          cl /nologo /EHsc /TP ^
+            /Ibindings\c\include ^
+            /c bindings\c\examples\header_smoke.cpp ^
+            /Fo:build\c\header_cpp_msvc.obj
+
           dumpbin /exports target\debug\terrakit.dll > build\c\exports.txt
+
           findstr /C:"tk_get_abi_version" build\c\exports.txt
           findstr /C:"tk_stage_registry_create_builtin" build\c\exports.txt
           findstr /C:"tk_pipeline_assembler_finish" build\c\exports.txt
           findstr /C:"tk_runtime_generate_2d" build\c\exports.txt
           findstr /C:"tk_generation_result_get_mesh" build\c\exports.txt
+
           set PATH=%CD%\target\debug;%PATH%
+
           build\c\generate_heightfield_msvc.exe
+
+  godot-plugin:
+    name: Godot Plugin (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            godot_platform: linux
+
+          - name: Windows x86_64
+            os: windows-latest
+            godot_platform: windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Show submodule state
+        run: git submodule status --recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install SCons
+        run: python -m pip install --upgrade scons
+
+      - name: Show SCons version
+        run: scons --version
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.87 --profile minimal
+
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+
+      - name: Build TerraKit C ABI
+        run: cargo build -p terrakit-c-api --all-features
+
+      - name: Build Godot GDExtension
+        run: >
+          scons
+          -C interfaces/terrakit-godot
+          platform=${{ matrix.godot_platform }}
+          target=template_debug
+          arch=x86_64
+          terrakit_profile=debug
+
+      - name: Verify Linux plugin artifacts
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="interfaces/terrakit-godot/addon/addons/terrakit"
+
+          test -f "$BASE/plugin.cfg"
+          test -f "$BASE/terrakit_plugin.gd"
+          test -f "$BASE/terrakit.gdextension"
+
+          test -f "$BASE/bin/linux/libterrakit.so"
+
+          test -f \
+            "$BASE/bin/linux/libterrakit_godot.linux.template_debug.x86_64.so"
+
+          echo "Godot Linux plugin artifacts:"
+          find "$BASE/bin/linux" -maxdepth 1 -type f -print
+
+      - name: Verify Windows plugin artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $base = "interfaces/terrakit-godot/addon/addons/terrakit"
+
+          $required = @(
+              "$base/plugin.cfg",
+              "$base/terrakit_plugin.gd",
+              "$base/terrakit.gdextension",
+              "$base/bin/windows/terrakit.dll",
+              "$base/bin/windows/terrakit_godot.windows.template_debug.x86_64.dll"
+          )
+
+          foreach ($path in $required) {
+              if (-not (Test-Path $path)) {
+                  throw "Required Godot plugin artifact was not produced: $path"
+              }
+          }
+
+          Write-Host "Godot Windows plugin artifacts:"
+
+          Get-ChildItem "$base/bin/windows"
