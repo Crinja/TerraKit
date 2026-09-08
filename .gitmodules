@@ -1,0 +1,3 @@
+[submodule "interfaces/terrakit-godot/godot-cpp"]
+	path = interfaces/terrakit-godot/godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git
