@@ -3,7 +3,7 @@ resolver = "3"
 members = [
     "engine/*",
     "generation/*",
-    "interfaces/*",
+    "interfaces/terrakit-console",
     "tools/xtask",
 ]
 
