@@ -5,14 +5,14 @@ use std::ffi::c_char;
 use crate::{TkStatus, error::ffi_guard, ffi::out_ref, types::TkStringView, types::TkVersion};
 
 const ABI_VERSION: TkVersion = TkVersion {
-    major: 1,
-    minor: 0,
+    major: 0,
+    minor: 1,
     patch: 0,
 };
 
 const LIBRARY_VERSION_BYTES: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
-/// Writes the embedding ABI version, currently `1.0.0`.
+/// Writes the embedding ABI version, currently `0.1.0`.
 #[unsafe(no_mangle)]
 pub extern "C" fn tk_get_abi_version(out_version: *mut TkVersion) -> TkStatus {
     ffi_guard(|| {
