@@ -1,0 +1,525 @@
+name: Release Godot Plugin
+
+on:
+  push:
+    tags:
+      - "godot-v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-godot-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ===========================================================================
+  # Validate Godot release
+  # ===========================================================================
+
+  validate:
+    name: Validate Godot Release
+    runs-on: ubuntu-latest
+
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      terrakit_version: ${{ steps.version.outputs.terrakit_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate Godot tag and plugin version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import configparser
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          tag = os.environ["GITHUB_REF_NAME"]
+
+          match = re.fullmatch(
+              r"godot-v(\d+\.\d+\.\d+)",
+              tag,
+          )
+
+          if match is None:
+              raise SystemExit(
+                  "Invalid Godot release tag.\n"
+                  "Expected: godot-vX.Y.Z\n"
+                  f"Received: {tag}"
+              )
+
+          tag_version = match.group(1)
+
+          plugin_cfg = Path(
+              "interfaces/terrakit-godot/"
+              "addon/addons/terrakit/plugin.cfg"
+          )
+
+          if not plugin_cfg.is_file():
+              raise SystemExit(
+                  f"plugin.cfg not found: {plugin_cfg}"
+              )
+
+          config = configparser.ConfigParser()
+          config.read(plugin_cfg)
+
+          plugin_version = (
+              config["plugin"]["version"]
+              .strip()
+              .strip('"')
+              .strip("'")
+          )
+
+          if plugin_version != tag_version:
+              raise SystemExit(
+                  "Godot plugin version does not match tag:\n"
+                  f"  plugin.cfg: {plugin_version}\n"
+                  f"  tag:        {tag_version}"
+              )
+
+          with open("Cargo.toml", "rb") as file:
+              cargo = tomllib.load(file)
+
+          terrakit_version = cargo["workspace"]["package"]["version"]
+
+          github_output = Path(
+              os.environ["GITHUB_OUTPUT"]
+          )
+
+          with github_output.open("a") as output:
+              output.write(f"tag={tag}\n")
+              output.write(
+                  f"version={plugin_version}\n"
+              )
+              output.write(
+                  f"terrakit_version={terrakit_version}\n"
+              )
+
+          print(
+              f"Godot plugin version: {plugin_version}"
+          )
+
+          print(
+              f"Bundled TerraKit version: "
+              f"{terrakit_version}"
+          )
+          PY
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.87 --profile minimal
+
+      - name: Test TerraKit workspace
+        run: cargo test --workspace --all-features
+
+
+  # ===========================================================================
+  # Build platform-specific Godot binaries
+  #
+  # Both Godot debug and release GDExtensions are built against the optimized
+  # TerraKit C ABI.
+  # ===========================================================================
+
+  build:
+    name: Godot Build (${{ matrix.name }})
+
+    needs:
+      - validate
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            godot_platform: linux
+
+          - name: Windows x86_64
+            os: windows-latest
+            godot_platform: windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Show submodule state
+        run: git submodule status --recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install SCons
+        run: |
+          python -m pip install --upgrade scons
+
+      - name: Show SCons version
+        run: scons --version
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.87 --profile minimal
+
+      - name: Build optimized TerraKit C ABI
+        run: >
+          cargo build
+          -p terrakit-c-api
+          --all-features
+          --release
+
+      # -----------------------------------------------------------------------
+      # Linux
+      # -----------------------------------------------------------------------
+
+      - name: Build Godot debug GDExtension
+        if: runner.os == 'Linux'
+        run: >
+          scons
+          -C interfaces/terrakit-godot
+          platform=linux
+          target=template_debug
+          arch=x86_64
+          terrakit_profile=release
+
+      - name: Build Godot release GDExtension
+        if: runner.os == 'Linux'
+        run: >
+          scons
+          -C interfaces/terrakit-godot
+          platform=linux
+          target=template_release
+          arch=x86_64
+          terrakit_profile=release
+
+      - name: Verify Linux binaries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="interfaces/terrakit-godot/addon/addons/terrakit/bin/linux"
+
+          test -f \
+            "$BASE/libterrakit.so"
+
+          test -f \
+            "$BASE/libterrakit_godot.linux.template_debug.x86_64.so"
+
+          test -f \
+            "$BASE/libterrakit_godot.linux.template_release.x86_64.so"
+
+          echo
+          echo "Linux release files:"
+
+          find "$BASE" \
+            -maxdepth 1 \
+            -type f \
+            -print \
+            | sort
+
+      # -----------------------------------------------------------------------
+      # Windows
+      # -----------------------------------------------------------------------
+
+      - name: Build Godot GDExtensions
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+
+          if not defined VSINSTALL (
+            echo Visual Studio C++ toolchain was not found.
+            exit /b 1
+          )
+
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=amd64
+
+          if errorlevel 1 exit /b 1
+
+          scons ^
+            -C interfaces/terrakit-godot ^
+            platform=windows ^
+            target=template_debug ^
+            arch=x86_64 ^
+            terrakit_profile=release
+
+          if errorlevel 1 exit /b 1
+
+          scons ^
+            -C interfaces/terrakit-godot ^
+            platform=windows ^
+            target=template_release ^
+            arch=x86_64 ^
+            terrakit_profile=release
+
+      - name: Verify Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $base = "interfaces/terrakit-godot/addon/addons/terrakit/bin/windows"
+
+          $required = @(
+              "$base/terrakit.dll",
+              "$base/terrakit_godot.windows.template_debug.x86_64.dll",
+              "$base/terrakit_godot.windows.template_release.x86_64.dll"
+          )
+
+          foreach ($path in $required) {
+              if (-not (Test-Path $path)) {
+                  throw "Required Godot release file is missing: $path"
+              }
+          }
+
+          Write-Host ""
+          Write-Host "Windows release files:"
+
+          Get-ChildItem $base
+
+      # -----------------------------------------------------------------------
+      # Platform artifact
+      #
+      # Upload bin/ rather than bin/linux or bin/windows so the platform folder
+      # itself is preserved when the two artifacts are merged later.
+      # -----------------------------------------------------------------------
+
+      - name: Upload Godot platform binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: >-
+            terrakit-godot-bin-${{
+              matrix.godot_platform
+            }}-x86_64
+          path: >-
+            interfaces/terrakit-godot/addon/addons/terrakit/bin/
+          if-no-files-found: error
+
+
+  # ===========================================================================
+  # Assemble the installable Godot addon
+  #
+  # ZIP layout:
+  #
+  # addons/
+  # └── terrakit/
+  #     ├── plugin.cfg
+  #     ├── terrakit_plugin.gd
+  #     ├── terrakit.gdextension
+  #     └── bin/
+  # ===========================================================================
+
+  package:
+    name: Package Godot Plugin
+
+    needs:
+      - validate
+      - build
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Create staging directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/godot/addons
+
+          cp -a \
+            interfaces/terrakit-godot/addon/addons/terrakit \
+            dist/godot/addons/
+
+          rm -rf \
+            dist/godot/addons/terrakit/bin
+
+          mkdir -p \
+            dist/godot/addons/terrakit/bin
+
+      - name: Download platform binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: terrakit-godot-bin-*
+          path: dist/godot/addons/terrakit/bin
+          merge-multiple: true
+
+      - name: Verify assembled plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="dist/godot/addons/terrakit"
+
+          test -f "$BASE/plugin.cfg"
+          test -f "$BASE/terrakit_plugin.gd"
+          test -f "$BASE/terrakit.gdextension"
+
+          test -f \
+            "$BASE/bin/linux/libterrakit.so"
+
+          test -f \
+            "$BASE/bin/linux/libterrakit_godot.linux.template_debug.x86_64.so"
+
+          test -f \
+            "$BASE/bin/linux/libterrakit_godot.linux.template_release.x86_64.so"
+
+          test -f \
+            "$BASE/bin/windows/terrakit.dll"
+
+          test -f \
+            "$BASE/bin/windows/terrakit_godot.windows.template_debug.x86_64.dll"
+
+          test -f \
+            "$BASE/bin/windows/terrakit_godot.windows.template_release.x86_64.dll"
+
+          echo
+          echo "Final addon contents:"
+
+          find "$BASE" \
+            -type f \
+            -print \
+            | sort
+
+      - name: Create Godot plugin ZIP
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/release
+
+          cd dist/godot
+
+          zip -r \
+            "../release/terrakit-godot-v${VERSION}.zip" \
+            addons
+
+          cd ../release
+
+          sha256sum \
+            "terrakit-godot-v${VERSION}.zip" \
+            > "terrakit-godot-v${VERSION}.zip.sha256"
+
+      - name: Inspect archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+
+        run: |
+          set -euo pipefail
+
+          unzip -l \
+            "dist/release/terrakit-godot-v${VERSION}.zip"
+
+      - name: Upload packaged Godot plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: >-
+            terrakit-godot-package-${{
+              needs.validate.outputs.version
+            }}
+          path: |
+            dist/release/terrakit-godot-*.zip
+            dist/release/terrakit-godot-*.sha256
+          if-no-files-found: error
+
+
+  # ===========================================================================
+  # Publish independent Godot GitHub release
+  # ===========================================================================
+
+  github-release:
+    name: Publish Godot Release
+
+    needs:
+      - validate
+      - package
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create release directory
+        run: mkdir -p dist/release
+
+      - name: Download Godot package
+        uses: actions/download-artifact@v8
+        with:
+          name: >-
+            terrakit-godot-package-${{
+              needs.validate.outputs.version
+            }}
+          path: dist/release
+
+      - name: Show release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Publishing Godot plugin:"
+          find dist/release -maxdepth 1 -type f -print | sort
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          PLUGIN_VERSION: ${{ needs.validate.outputs.version }}
+          TERRAKIT_VERSION: ${{ needs.validate.outputs.terrakit_version }}
+
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+
+            gh release upload \
+              "$RELEASE_TAG" \
+              dist/release/* \
+              --clobber
+
+          else
+
+            NOTES_FILE="$(mktemp)"
+
+            cat > "$NOTES_FILE" <<EOF
+          TerraKit Godot plugin ${PLUGIN_VERSION}.
+
+          Bundled TerraKit version: ${TERRAKIT_VERSION}
+
+          Install by extracting the archive into the root of a Godot project so that the plugin appears at:
+
+          addons/terrakit/
+          EOF
+
+            gh release create \
+              "$RELEASE_TAG" \
+              dist/release/* \
+              --title "TerraKit Godot $PLUGIN_VERSION" \
+              --notes-file "$NOTES_FILE" \
+              --verify-tag
+
+          fi

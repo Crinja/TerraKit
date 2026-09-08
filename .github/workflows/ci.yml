@@ -18,6 +18,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ===========================================================================
+  # Main Linux quality gate
+  # ===========================================================================
+
   linux-quality:
     name: Linux Quality Gate
     runs-on: ubuntu-latest
@@ -34,6 +38,11 @@ jobs:
 
       - name: Run full CI gate
         run: make ci
+
+
+  # ===========================================================================
+  # Cross-platform Rust / C ABI smoke tests
+  # ===========================================================================
 
   platform-smoke:
     name: Platform Smoke (${{ matrix.os }})
@@ -55,19 +64,23 @@ jobs:
         run: |
           rustup toolchain install 1.87 --profile minimal
 
-      - name: Configure MSVC
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1.13.0
-
       - name: Test workspace
         run: cargo test --workspace --all-features
 
       - name: Build C ABI
         run: cargo build -p terrakit-c-api --all-features
 
+      # -----------------------------------------------------------------------
+      # macOS C smoke
+      # -----------------------------------------------------------------------
+
       - name: Native C smoke test
-        if: runner.os != 'Windows'
+        if: runner.os == 'macOS'
         run: make c-test
+
+      # -----------------------------------------------------------------------
+      # Windows C smoke
+      # -----------------------------------------------------------------------
 
       - name: Install cbindgen
         if: runner.os == 'Windows'
@@ -89,6 +102,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+
+          if not defined VSINSTALL (
+            echo Visual Studio C++ toolchain was not found.
+            exit /b 1
+          )
+
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=amd64
+
+          if errorlevel 1 exit /b 1
+
           if not exist build\c mkdir build\c
 
           cl /nologo /W4 ^
@@ -97,22 +121,50 @@ jobs:
             target\debug\terrakit.dll.lib ^
             /Fe:build\c\generate_heightfield_msvc.exe
 
+          if errorlevel 1 exit /b 1
+
           cl /nologo /EHsc /TP ^
             /Ibindings\c\include ^
             /c bindings\c\examples\header_smoke.cpp ^
             /Fo:build\c\header_cpp_msvc.obj
 
+          if errorlevel 1 exit /b 1
+
           dumpbin /exports target\debug\terrakit.dll > build\c\exports.txt
 
           findstr /C:"tk_get_abi_version" build\c\exports.txt
-          findstr /C:"tk_stage_registry_create_builtin" build\c\exports.txt
-          findstr /C:"tk_pipeline_assembler_finish" build\c\exports.txt
-          findstr /C:"tk_runtime_generate_2d" build\c\exports.txt
-          findstr /C:"tk_generation_result_get_mesh" build\c\exports.txt
+          if errorlevel 1 exit /b 1
 
-          set PATH=%CD%\target\debug;%PATH%
+          findstr /C:"tk_stage_registry_create_builtin" build\c\exports.txt
+          if errorlevel 1 exit /b 1
+
+          findstr /C:"tk_pipeline_assembler_finish" build\c\exports.txt
+          if errorlevel 1 exit /b 1
+
+          findstr /C:"tk_runtime_generate_2d" build\c\exports.txt
+          if errorlevel 1 exit /b 1
+
+          findstr /C:"tk_generation_result_get_mesh" build\c\exports.txt
+          if errorlevel 1 exit /b 1
+
+          set "PATH=%CD%\target\debug;%PATH%"
 
           build\c\generate_heightfield_msvc.exe
+
+
+  # ===========================================================================
+  # Godot GDExtension consumer build
+  #
+  # This proves:
+  #
+  # Godot C++
+  #     ↓
+  # terrakit.h
+  #     ↓
+  # TerraKit C ABI
+  #
+  # No direct dependency on TerraKit Rust internals.
+  # ===========================================================================
 
   godot-plugin:
     name: Godot Plugin (${{ matrix.name }})
@@ -146,7 +198,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install SCons
-        run: python -m pip install --upgrade scons
+        run: |
+          python -m pip install --upgrade scons
 
       - name: Show SCons version
         run: scons --version
@@ -155,25 +208,24 @@ jobs:
         run: |
           rustup toolchain install 1.87 --profile minimal
 
-      - name: Configure MSVC
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1.13.0
-        with:
-          arch: x64
-
       - name: Build TerraKit C ABI
         run: cargo build -p terrakit-c-api --all-features
 
+      # -----------------------------------------------------------------------
+      # Linux GDExtension
+      # -----------------------------------------------------------------------
+
       - name: Build Godot GDExtension
+        if: runner.os == 'Linux'
         run: >
           scons
           -C interfaces/terrakit-godot
-          platform=${{ matrix.godot_platform }}
+          platform=linux
           target=template_debug
           arch=x86_64
           terrakit_profile=debug
 
-      - name: Verify Linux plugin artifacts
+      - name: Verify Linux plugin
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -185,15 +237,43 @@ jobs:
           test -f "$BASE/terrakit_plugin.gd"
           test -f "$BASE/terrakit.gdextension"
 
-          test -f "$BASE/bin/linux/libterrakit.so"
+          test -f \
+            "$BASE/bin/linux/libterrakit.so"
 
           test -f \
             "$BASE/bin/linux/libterrakit_godot.linux.template_debug.x86_64.so"
 
-          echo "Godot Linux plugin artifacts:"
-          find "$BASE/bin/linux" -maxdepth 1 -type f -print
+          echo
+          echo "Linux Godot plugin files:"
+          find "$BASE/bin/linux" -maxdepth 1 -type f -print | sort
 
-      - name: Verify Windows plugin artifacts
+      # -----------------------------------------------------------------------
+      # Windows GDExtension
+      # -----------------------------------------------------------------------
+
+      - name: Build Godot GDExtension
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+
+          if not defined VSINSTALL (
+            echo Visual Studio C++ toolchain was not found.
+            exit /b 1
+          )
+
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=amd64
+
+          if errorlevel 1 exit /b 1
+
+          scons ^
+            -C interfaces/terrakit-godot ^
+            platform=windows ^
+            target=template_debug ^
+            arch=x86_64 ^
+            terrakit_profile=debug
+
+      - name: Verify Windows plugin
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -209,10 +289,11 @@ jobs:
 
           foreach ($path in $required) {
               if (-not (Test-Path $path)) {
-                  throw "Required Godot plugin artifact was not produced: $path"
+                  throw "Required Godot plugin file was not produced: $path"
               }
           }
 
-          Write-Host "Godot Windows plugin artifacts:"
+          Write-Host ""
+          Write-Host "Windows Godot plugin files:"
 
           Get-ChildItem "$base/bin/windows"
