@@ -52,7 +52,7 @@ impl AmplifyHeightDefinition {
                             minimum: None,
                             maximum: None,
                         },
-                        Some(ParameterValue::F32(1.00)), // TO DO SANITY CHECK THIS DEFAULT
+                        Some(ParameterValue::F32(0.5)),
                     )?,
                     parameter(
                         "threshold_direction",
@@ -95,7 +95,7 @@ impl AmplifyHeightDefinition {
                             minimum: Some(0.00),
                             maximum: None
                         },
-                        Some(ParameterValue::F32(5.00)) // TO DO: SANITY CHECK THIS DEFAULT
+                        Some(ParameterValue::F32(5.00))
                     )?,
                     parameter(
                         "amplify_limit",
@@ -105,7 +105,7 @@ impl AmplifyHeightDefinition {
                             minimum: None,
                             maximum: None
                         },
-                        Some(ParameterValue::F32(10.00)) // TO DO: SANITY CHECK THIS DEFAULT
+                        Some(ParameterValue::F32(10.00))
                     )?,
                 ],
             )?,
