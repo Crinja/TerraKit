@@ -49,7 +49,6 @@ pub struct AmplifyHeightStage {
     products: [ResourceProduct; 1],
 }
 
-struct NegativeNumError;
 impl AmplifyHeightStage {
     /// Creates a height amplification stage.
     ///
@@ -65,14 +64,8 @@ impl AmplifyHeightStage {
         amplify_limit: f32
     ) -> Result<Self, StageError> {
 
-        if threshold < 0.00 {
-            return Err(StageError::new("amplify height threshold must be positive",));
-        }
         if amplify_value < 0.00 {
             return Err(StageError::new("amplify value must be positive",));
-        }
-        if amplify_limit < 0.00 {
-            return Err(StageError::new("amplify limit must be positive",));
         }
 
         Ok(Self {
@@ -151,11 +144,6 @@ impl TerrainStage for AmplifyHeightStage {
             .as_region2()
             .ok_or_else(|| StageError::new("amplify height stage requires a 2D generation region"))?;
 
-        if self.amplify_direction {
-            self.amplify_value = self.amplify_value * -1.0;
-            self.amplify_limit = self.amplify_limit * -1.0;
-        }
-
         if self.input == self.output {
             return Err(StageError::new(
                 "height amplify input and output keys must be distinct",
@@ -185,7 +173,7 @@ impl TerrainStage for AmplifyHeightStage {
                     )));
                 };
 
-                if !self.threshold_direction && existing_height > self.threshold {
+                if !self.threshold_direction && existing_height < self.threshold {
                     continue;
                 }
 
@@ -193,11 +181,19 @@ impl TerrainStage for AmplifyHeightStage {
                     continue;
                 }
 
-                let mut next = self.amplify_mode.combine(existing_height, self.amplify_value);
+                let mut amp_value = self.amplify_value;
+                if self.amplify_direction{
+                    match self.amplify_mode{
+                        HeightAmplifyMode::Add => amp_value = -self.amplify_value,
+                        HeightAmplifyMode::Multiply => amp_value = 1.0 / self.amplify_value
+                        }
+                }
+
+                let mut next = self.amplify_mode.combine(existing_height, amp_value);
 
                 if !next.is_finite() {
                     return Err(StageError::new(format!(
-                        "height noise produced a non-finite sample at ({x}, {y})"
+                        "height amplify produced a non-finite sample at ({x}, {y})"
                     )));
                 }
 

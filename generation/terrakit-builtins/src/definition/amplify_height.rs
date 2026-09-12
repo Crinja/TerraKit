@@ -48,7 +48,7 @@ impl AmplifyHeightDefinition {
                         "threshold",
                         "Starting Threshold",
                         "Value for which amplification begins to act above or below (according to Threshold direction).",
-                        ParameterType::F64 {
+                        ParameterType::F32 {
                             minimum: None,
                             maximum: None,
                         },
@@ -74,7 +74,7 @@ impl AmplifyHeightDefinition {
                                 enum_option(
                                     "multiply",
                                     "Multiplicative",
-                                    "Amplification value and current height are multiplied together.",
+                                    "Current height is multiplied according to amplification value. If reversed, height is dampened instead.",
                                 )?,
                             ],
                         },
@@ -91,7 +91,7 @@ impl AmplifyHeightDefinition {
                         "amplify_value",
                         "Amplification Value",
                         "Value by which height is amplified.",
-                        ParameterType::F64{
+                        ParameterType::F32{
                             minimum: Some(0.00),
                             maximum: None
                         },
@@ -100,9 +100,9 @@ impl AmplifyHeightDefinition {
                     parameter(
                         "amplify_limit",
                         "Amplification Limit",
-                        "Highest (or lowest) height that can be achieved by the amplification step. Positive values only, will be calculated according to Reverse Amplification",
+                        "Highest (or lowest) height that can be achieved by the amplification step.",
                         ParameterType::F32{
-                            minimum: Some(0.00),
+                            minimum: None,
                             maximum: None
                         },
                         Some(ParameterValue::F32(10.00)) // TO DO: SANITY CHECK THIS DEFAULT
@@ -124,7 +124,7 @@ impl StageDefinition for AmplifyHeightDefinition {
         parameters: &ResolvedParameterSet,
         bindings: &ValidatedStageBindings,
     ) -> Result<Box<dyn terrakit_pipeline::TerrainStage>, StageBuildError> {
-        let amplify_mode = amplify_mode(parameters.enum_id("amplify-mode")?)?;
+        let amplify_mode = amplify_mode(parameters.enum_id("amplify_mode")?)?;
         let threshold = parameters.f32("threshold")?;
         let threshold_direction = parameters.bool("threshold_direction")?;
         let amplify_direction = parameters.bool("amplify_direction")?;
