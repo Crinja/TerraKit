@@ -1254,7 +1254,7 @@ tk_status_t tk_runtime_generate_3d(struct tk_runtime_t *runtime,
 TK_API tk_status_t tk_runtime_destroy(struct tk_runtime_t **runtime);
 
 /**
- * Writes the embedding ABI version, currently `1.0.0`.
+ * Writes the embedding ABI version, currently `0.1.0`.
  */
 TK_API tk_status_t tk_get_abi_version(struct tk_version_t *out_version);
 
