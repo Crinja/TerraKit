@@ -56,3 +56,27 @@ jobs:
 
       - name: Build TerraKit C ABI
         run: cargo build -p terrakit-c-api --all-features
+
+  gate:
+    name: TerraKit Gate
+    if: always()
+  
+    needs:
+      - quality
+      - platform
+  
+    runs-on: ubuntu-latest
+  
+    steps:
+      - name: Check TerraKit CI result
+        shell: bash
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          PLATFORM_RESULT: ${{ needs.platform.result }}
+        run: |
+          if [ "$QUALITY_RESULT" != "success" ] \
+            || [ "$PLATFORM_RESULT" != "success" ]; then
+  
+            echo "::error::TerraKit CI failed."
+            exit 1
+          fi

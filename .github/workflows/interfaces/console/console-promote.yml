@@ -1,0 +1,211 @@
+name: Console Promote
+
+on:
+  push:
+    branches:
+      - console
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote Console Release
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: console
+
+      - name: Fetch main
+        run: |
+          git fetch origin main --no-tags
+
+      - name: Verify Console branch scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES="$(
+            git diff \
+              --name-only \
+              origin/main...HEAD
+          )"
+
+          FORBIDDEN="$(
+            printf '%s\n' "$CHANGED_FILES" \
+              | grep -v '^$' \
+              | grep -Ev '^interfaces/terrakit-console/' \
+              || true
+          )"
+
+          if [ -n "$FORBIDDEN" ]; then
+            echo "::error::Console contains changes outside interfaces/terrakit-console/."
+            printf '%s\n' "$FORBIDDEN"
+            exit 1
+          fi
+
+      - name: Compare Console versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
+          import tomllib
+
+          MANIFEST = "interfaces/terrakit-console/Cargo.toml"
+
+          with open(MANIFEST, "rb") as handle:
+              console_version = tomllib.load(handle)["package"]["version"]
+
+          main_manifest = subprocess.check_output(
+              ["git", "show", f"origin/main:{MANIFEST}"],
+              text=True,
+          )
+
+          main_version = tomllib.loads(main_manifest)["package"]["version"]
+
+          def parse_stable_semver(value: str):
+              match = re.fullmatch(
+                  r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)",
+                  value,
+              )
+
+              if match is None:
+                  raise SystemExit(
+                      f"release versions must currently use stable X.Y.Z SemVer; got {value!r}"
+                  )
+
+              return tuple(int(part) for part in match.groups())
+
+          console_semver = parse_stable_semver(console_version)
+          main_semver = parse_stable_semver(main_version)
+
+          print(f"main:    {main_version}")
+          print(f"console: {console_version}")
+
+          output = os.environ["GITHUB_OUTPUT"]
+
+          with open(output, "a", encoding="utf-8") as handle:
+              handle.write(f"version={console_version}\n")
+
+              if console_semver == main_semver:
+                  handle.write("promote=false\n")
+                  print("No Console version change.")
+              elif console_semver < main_semver:
+                  raise SystemExit(
+                      f"Console version {console_version} is older than main version {main_version}"
+                  )
+              else:
+                  handle.write("promote=true\n")
+                  print(f"Console {console_version} is ready for promotion.")
+          PY
+
+      - name: Check release tag
+        if: steps.version.outputs.promote == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          TAG="terrakit-console-v${RELEASE_VERSION}"
+
+          if git ls-remote \
+            --exit-code \
+            --tags origin \
+            "refs/tags/$TAG" \
+            >/dev/null 2>&1; then
+
+            echo "::error::$TAG already exists."
+            exit 1
+          fi
+
+      - name: Close pending sync PR
+        if: steps.version.outputs.promote == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBERS="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --base console \
+              --head main \
+              --json number \
+              --jq '.[].number'
+          )"
+
+          for PR_NUMBER in $PR_NUMBERS; do
+            gh pr close \
+              "$PR_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --comment "Closing automated main → console sync because Console release promotion has started."
+          done
+
+      - name: Create or update promotion PR
+        if: steps.version.outputs.promote == 'true'
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --base main \
+              --head console \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL="$(
+              gh pr create \
+                --repo "$GITHUB_REPOSITORY" \
+                --base main \
+                --head console \
+                --title "Release TerraKit Console ${RELEASE_VERSION}" \
+                --body "Promotes TerraKit Console ${RELEASE_VERSION} from the persistent \`console\` branch into \`main\`."
+            )"
+
+            PR_NUMBER="${PR_URL##*/}"
+            echo "Created PR #$PR_NUMBER."
+          else
+            echo "Using existing promotion PR #$PR_NUMBER."
+          fi
+
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: steps.version.outputs.promote == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          gh pr merge \
+            "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --auto \
+            --merge
