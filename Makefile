@@ -13,7 +13,6 @@ TERRAKIT_DYLIB = $(TARGET_DIR)/libterrakit.dylib
 TERRAKIT_STATIC_WIN = $(TARGET_DIR)/terrakit.lib
 TERRAKIT_STATIC_UNIX = $(TARGET_DIR)/libterrakit.a
 C_EXAMPLE_BASENAME := build/c/generate_heightfield
-REQUIRED_C_SYMBOLS := tk_get_abi_version tk_stage_registry_create_builtin tk_pipeline_assembler_finish tk_runtime_generate_2d tk_generation_result_get_mesh
 ENSURE_CBINDGEN = $(XTASK) ensure-cbindgen --binary "$(CBINDGEN)"
 RUN_C_EXAMPLE = $(XTASK) run-with-library-path --target-dir "$(TARGET_DIR)" -- "$(C_EXAMPLE_EXE)"
 DOC_CHECK = $(XTASK) doc-check
@@ -83,7 +82,7 @@ c-header-check: ensure-cbindgen
 	$(CBINDGEN) --verify --config engine/terrakit-c-api/cbindgen.toml --crate terrakit-c-api --output bindings/c/include/terrakit.h
 
 c-symbol-check: c-build
-	$(XTASK) c-symbol-check --target-dir "$(TARGET_DIR)" --symbols "$(REQUIRED_C_SYMBOLS)"
+	$(XTASK) c-symbol-check --target-dir "$(TARGET_DIR)"
 
 c-example: c-build
 	$(MKDIR_P) build/c
