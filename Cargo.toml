@@ -6,6 +6,10 @@ members = [
     "tools/xtask",
 ]
 
+exclude = [
+    "interfaces/*",
+]
+
 [workspace.package]
 version = "0.0.2"
 edition = "2024"
