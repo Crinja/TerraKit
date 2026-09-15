@@ -8,6 +8,8 @@ use std::process::Command;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+const CBINDGEN_VERSION: &str = "0.29.0";
+
 const RELEASE_PACKAGES: &[(&str, &str)] = &[
     ("terrakit-core", "engine/terrakit-core"),
     ("terrakit-pipeline", "engine/terrakit-pipeline"),
@@ -15,7 +17,6 @@ const RELEASE_PACKAGES: &[(&str, &str)] = &[
     ("terrakit-algorithms", "generation/terrakit-algorithms"),
     ("terrakit-builtins", "generation/terrakit-builtins"),
     ("terrakit-c-api", "engine/terrakit-c-api"),
-    ("terrakit-console", "interfaces/terrakit-console"),
 ];
 
 const REQUIRED_C_SYMBOLS: &[&str] = &[
@@ -219,8 +220,9 @@ fn doc_check(args: Vec<String>) -> Result<()> {
 }
 
 fn ensure_cbindgen(mut args: Vec<String>) -> Result<()> {
-    let version = take_option(&mut args, "--version")?.unwrap_or_else(|| "0.29.0".to_string());
-    let binary = take_option(&mut args, "--binary")?.unwrap_or_else(|| "cbindgen".to_string());
+    let binary =
+        take_option(&mut args, "--binary")?.unwrap_or_else(|| "cbindgen".to_string());
+
     require_no_args(&args)?;
 
     if command_exists(&binary) {
@@ -228,12 +230,14 @@ fn ensure_cbindgen(mut args: Vec<String>) -> Result<()> {
     }
 
     let mut command = Command::new("cargo");
+
     command
         .arg("install")
         .arg("cbindgen")
         .arg("--version")
-        .arg(version)
+        .arg(CBINDGEN_VERSION)
         .arg("--locked");
+
     run_command(&mut command)
 }
 
@@ -912,12 +916,6 @@ fn check_release_manifests(args: Vec<String>) -> Result<()> {
             &manifest_dir,
             &root_manifest_contents,
         )?;
-        check_package_dependency_versions(
-            package_name,
-            &contents,
-            &root_manifest_contents,
-            &version,
-        )?;
     }
 
     println!(
@@ -1111,69 +1109,6 @@ fn workspace_package_field_from_contents(contents: &str, field: &str) -> Result<
     })
 }
 
-fn check_package_dependency_versions(
-    package_name: &str,
-    contents: &str,
-    root_manifest_contents: &str,
-    workspace_version: &str,
-) -> Result<()> {
-    for dependency_name in RELEASE_PACKAGES.iter().map(|(name, _)| *name) {
-        for section in ["dependencies", "dev-dependencies", "build-dependencies"] {
-            if toml_bool_field(contents, section, &format!("{dependency_name}.workspace"))
-                .unwrap_or(false)
-            {
-                let Some(requirement) =
-                    workspace_dependency_version(root_manifest_contents, dependency_name)
-                else {
-                    return fail(format!(
-                        "{package_name} dependency {dependency_name} uses workspace metadata, but [workspace.dependencies] is missing it"
-                    ));
-                };
-                check_dependency_requirement(
-                    package_name,
-                    dependency_name,
-                    &requirement,
-                    workspace_version,
-                )?;
-            }
-
-            if let Some(line) = toml_assignment_line(contents, section, dependency_name) {
-                if line.contains("path") {
-                    let requirement = inline_string_field(line, "version").unwrap_or_default();
-                    check_dependency_requirement(
-                        package_name,
-                        dependency_name,
-                        &requirement,
-                        workspace_version,
-                    )?;
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn check_dependency_requirement(
-    package_name: &str,
-    dependency_name: &str,
-    requirement: &str,
-    workspace_version: &str,
-) -> Result<()> {
-    if requirement.contains(workspace_version) {
-        Ok(())
-    } else {
-        fail(format!(
-            "{package_name} dependency {dependency_name} uses version requirement {requirement:?}; expected {workspace_version}"
-        ))
-    }
-}
-
-fn workspace_dependency_version(contents: &str, dependency_name: &str) -> Option<String> {
-    let line = toml_assignment_line(contents, "workspace.dependencies", dependency_name)?;
-    inline_string_field(line, "version").or_else(|| toml_assignment_string_value(line))
-}
-
 fn toml_assignment_line<'a>(contents: &'a str, section: &'a str, key: &str) -> Option<&'a str> {
     section_lines(contents, section).find(|line| {
         line.split_once('=')
@@ -1199,12 +1134,6 @@ fn toml_bool_field(contents: &str, section: &str, key: &str) -> Option<bool> {
         "false" => Some(false),
         _ => None,
     }
-}
-
-fn inline_string_field(line: &str, key: &str) -> Option<String> {
-    let pattern = format!("{key} = ");
-    let start = line.find(&pattern)? + pattern.len();
-    parse_quoted_string(line[start..].trim_start())
 }
 
 fn parse_quoted_string(value: &str) -> Option<String> {

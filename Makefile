@@ -1,6 +1,5 @@
 .PHONY: fmt fmt-check lint test doc doc-check package-check check ci release-check demo clean c-build c-build-release c-header c-header-check c-symbol-check c-test c-example c-package c-package-release c-archive c-archive-release ensure-cbindgen
 
-CBINDGEN_VERSION ?= 0.29.0
 CBINDGEN ?= cbindgen
 CARGO_BUILD_FLAGS ?=
 CARGO_TARGET_DIR ?= target
@@ -15,7 +14,7 @@ TERRAKIT_STATIC_WIN = $(TARGET_DIR)/terrakit.lib
 TERRAKIT_STATIC_UNIX = $(TARGET_DIR)/libterrakit.a
 C_EXAMPLE_BASENAME := build/c/generate_heightfield
 REQUIRED_C_SYMBOLS := tk_get_abi_version tk_stage_registry_create_builtin tk_pipeline_assembler_finish tk_runtime_generate_2d tk_generation_result_get_mesh
-ENSURE_CBINDGEN = $(XTASK) ensure-cbindgen --version "$(CBINDGEN_VERSION)" --binary "$(CBINDGEN)"
+ENSURE_CBINDGEN = $(XTASK) ensure-cbindgen --binary "$(CBINDGEN)"
 RUN_C_EXAMPLE = $(XTASK) run-with-library-path --target-dir "$(TARGET_DIR)" -- "$(C_EXAMPLE_EXE)"
 DOC_CHECK = $(XTASK) doc-check
 MKDIR_P = $(XTASK) mkdir
@@ -65,7 +64,7 @@ ci: check c-test package-check
 release-check: ci
 
 demo:
-	cargo run -p terrakit-console
+	cargo run --manifest-path interfaces/terrakit-console/Cargo.toml
 
 c-build:
 	cargo build -p terrakit-c-api --all-features $(CARGO_BUILD_FLAGS)
