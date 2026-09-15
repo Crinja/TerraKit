@@ -220,8 +220,7 @@ fn doc_check(args: Vec<String>) -> Result<()> {
 }
 
 fn ensure_cbindgen(mut args: Vec<String>) -> Result<()> {
-    let binary =
-        take_option(&mut args, "--binary")?.unwrap_or_else(|| "cbindgen".to_string());
+    let binary = take_option(&mut args, "--binary")?.unwrap_or_else(|| "cbindgen".to_string());
 
     require_no_args(&args)?;
 
