@@ -44,7 +44,7 @@ fn try_main() -> Result<()> {
     match command.as_str() {
         "archive-c-package" => archive_c_package(args),
         "check-release-manifests" => check_release_manifests(args),
-        "check-tag-version" => check_tag_version(args),
+        "release-info" => release_info(args),
         "c-symbol-check" => c_symbol_check(args),
         "doc-check" => doc_check(args),
         "ensure-cbindgen" => ensure_cbindgen(args),
@@ -153,41 +153,18 @@ fn workspace_version() -> Result<String> {
     })
 }
 
-fn check_tag_version(mut args: Vec<String>) -> Result<()> {
-    let ref_name = if args.is_empty() {
-        env::var("GITHUB_REF_NAME")
-            .or_else(|_| env::var("GITHUB_REF").map(|ref_name| last_ref_segment(&ref_name)))
-            .unwrap_or_default()
-    } else {
-        args.remove(0)
-    };
+fn release_info(args: Vec<String>) -> Result<()> {
     require_no_args(&args)?;
 
-    if ref_name.is_empty() {
-        return fail("no tag or ref name was provided");
-    }
+    let version = workspace_version()?;
+    let tag = format!("terrakit-v{version}");
 
-    let tag_version = ref_name.strip_prefix('v').unwrap_or(&ref_name);
-    let manifest_version = workspace_version()?;
+    github_output("version", &version)?;
+    github_output("tag", &tag)?;
 
-    github_output("tag", &ref_name)?;
-    github_output("version", &manifest_version)?;
+    println!("TerraKit {version} ({tag})");
 
-    if tag_version != manifest_version {
-        return fail(format!(
-            "tag {ref_name} does not match workspace version {manifest_version}; use tag v{manifest_version}"
-        ));
-    }
-
-    println!("Release tag {ref_name} matches workspace version {manifest_version}.");
     Ok(())
-}
-
-fn last_ref_segment(ref_name: &str) -> String {
-    ref_name
-        .rsplit_once('/')
-        .map_or(ref_name, |(_, segment)| segment)
-        .to_string()
 }
 
 fn host_target(args: Vec<String>) -> Result<()> {
