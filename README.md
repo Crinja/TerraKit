@@ -62,29 +62,7 @@ readiness.
 
 ## Releases
 
-TerraKit publishes from version tags. A release tag must match the workspace
-version in `Cargo.toml`.
-
-### Tag Format
-
-Use `v<version>`, for example:
-
-```sh
-git tag v0.0.1
-git push origin v0.0.1
-```
-
-The release workflow rejects tags that do not match `[workspace.package]`
-`version`.
-
-### Local Checks
-
-Run the same checks locally before tagging:
-
-```sh
-make release-check
-TARGET_TRIPLE=native make c-archive-release
-```
+TODO
 
 ## Coordinate Convention
 
