@@ -1,0 +1,103 @@
+name: Reusable Component Sync
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      component:
+        required: true
+        type: string
+    secrets:
+      automation_token:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync Main Into Component
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch persistent branches
+        shell: bash
+        env:
+          COMPONENT_BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          git fetch origin main "$COMPONENT_BRANCH" --no-tags
+
+      - name: Check sync state
+        id: state
+        shell: bash
+        env:
+          COMPONENT_BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+
+          if git merge-base --is-ancestor origin/main "origin/$COMPONENT_BRANCH"; then
+            echo "main is already contained in $COMPONENT_BRANCH."
+            echo "sync=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$COMPONENT_BRANCH is behind main."
+            echo "sync=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or reuse sync PR
+        if: steps.state.outputs.sync == 'true'
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.automation_token }}
+          COMPONENT_BRANCH: ${{ inputs.branch }}
+          COMPONENT_NAME: ${{ inputs.component }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --base "$COMPONENT_BRANCH" \
+              --head main \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL="$(
+              gh pr create \
+                --repo "$GITHUB_REPOSITORY" \
+                --base "$COMPONENT_BRANCH" \
+                --head main \
+                --title "Sync main into $COMPONENT_BRANCH" \
+                --body "Automated upstream sync of the canonical integrated \`main\` branch into the persistent **$COMPONENT_NAME** development branch."
+            )"
+            PR_NUMBER="${PR_URL##*/}"
+            echo "Created PR #$PR_NUMBER."
+          else
+            echo "Using existing sync PR #$PR_NUMBER."
+          fi
+
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: steps.state.outputs.sync == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.automation_token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          gh pr merge \
+            "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --auto \
+            --merge

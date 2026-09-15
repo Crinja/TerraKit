@@ -1,0 +1,20 @@
+name: TerraKit Promote
+
+on:
+  push:
+    branches: [tk]
+  workflow_dispatch:
+
+jobs:
+  promote:
+    uses: ./.github/workflows/_component-promote.yml
+    with:
+      component: TerraKit
+      branch: tk
+      version_path: Cargo.toml
+      version_kind: cargo-workspace
+      tag_prefix: terrakit-v
+      scope_mode: exclude
+      scope_pattern: '^interfaces/'
+    secrets:
+      automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}

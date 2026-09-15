@@ -2,9 +2,9 @@ name: TerraKit CI
 
 on:
   push:
-    branches: [main]
+    branches: [tk]
   pull_request:
-  merge_group:
+    branches: [tk, main]
   workflow_dispatch:
 
 permissions:
@@ -19,13 +19,21 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  scope:
+    name: TerraKit Scope
+    uses: ./.github/workflows/_component-scope.yml
+    with:
+      branch: tk
+      scope_mode: exclude
+      scope_pattern: '^interfaces/'
+
   quality:
     name: Quality Gate
+    needs: scope
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Run TerraKit CI
@@ -33,6 +41,7 @@ jobs:
 
   platform:
     name: Platform Smoke (${{ matrix.os }})
+    needs: scope
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -44,7 +53,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Configure MSVC
@@ -60,23 +68,23 @@ jobs:
   gate:
     name: TerraKit Gate
     if: always()
-  
-    needs:
-      - quality
-      - platform
-  
+    needs: [scope, quality, platform]
     runs-on: ubuntu-latest
-  
+
     steps:
       - name: Check TerraKit CI result
         shell: bash
         env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           PLATFORM_RESULT: ${{ needs.platform.result }}
         run: |
-          if [ "$QUALITY_RESULT" != "success" ] \
+          if [ "$SCOPE_RESULT" != "success" ] \
+            || [ "$QUALITY_RESULT" != "success" ] \
             || [ "$PLATFORM_RESULT" != "success" ]; then
-  
             echo "::error::TerraKit CI failed."
+            echo "Scope:    $SCOPE_RESULT"
+            echo "Quality:  $QUALITY_RESULT"
+            echo "Platform: $PLATFORM_RESULT"
             exit 1
           fi
