@@ -1,0 +1,17 @@
+name: Godot Sync
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '31 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    uses: ./.github/workflows/_component-sync.yml
+    with:
+      branch: godot
+      component: TerraKit Godot
+    secrets:
+      automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
