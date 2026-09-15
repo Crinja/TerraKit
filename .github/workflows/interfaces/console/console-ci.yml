@@ -1,0 +1,223 @@
+name: Console CI
+
+on:
+  push:
+    branches: [console]
+
+  pull_request:
+    branches:
+      - main
+      - console
+
+  merge_group:
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_TARGET_DIR: target/console
+
+jobs:
+  scope:
+    name: Branch Scope
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Enforce Console branch scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # main -> console is the authorised upstream sync.
+          # It is allowed to contain changes anywhere because those changes
+          # originate on main.
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && [ "$BASE_REF" = "console" ] \
+            && [ "$HEAD_REF" = "main" ]; then
+            echo "Authorised main -> console sync."
+            exit 0
+          fi
+
+          # A feature PR into console may only alter the Console directory.
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && [ "$BASE_REF" = "console" ]; then
+
+            CHANGED_FILES="$(
+              git diff \
+                --name-only \
+                "$BASE_SHA...$HEAD_SHA"
+            )"
+
+          # The promotion PR console -> main must likewise contain only
+          # Console-owned divergence.
+          elif [ "$EVENT_NAME" = "pull_request" ] \
+            && [ "$BASE_REF" = "main" ] \
+            && [ "$HEAD_REF" = "console" ]; then
+
+            CHANGED_FILES="$(
+              git diff \
+                --name-only \
+                "$BASE_SHA...$HEAD_SHA"
+            )"
+
+          # After anything lands on console, verify that all divergence from
+          # current main remains Console-owned.
+          elif [ "$EVENT_NAME" = "push" ] \
+            && [ "${GITHUB_REF_NAME}" = "console" ]; then
+
+            git fetch origin main --no-tags
+
+            CHANGED_FILES="$(
+              git diff \
+                --name-only \
+                origin/main...HEAD
+            )"
+
+          else
+            echo "No Console branch-scope enforcement required for this event."
+            exit 0
+          fi
+
+          echo "Console-owned divergence:"
+          printf '%s\n' "$CHANGED_FILES"
+
+          FORBIDDEN="$(
+            printf '%s\n' "$CHANGED_FILES" \
+              | grep -v '^$' \
+              | grep -Ev '^interfaces/terrakit-console/' \
+              || true
+          )"
+
+          if [ -n "$FORBIDDEN" ]; then
+            echo
+            echo "::error::The Console branch may only modify interfaces/terrakit-console/."
+            echo
+            echo "Forbidden paths:"
+            printf '%s\n' "$FORBIDDEN"
+            exit 1
+          fi
+
+          echo "Console branch scope is valid."
+
+  quality:
+    name: Quality Gate
+    needs: scope
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check formatting
+        run: >
+          cargo fmt
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          -- --check
+
+      - name: Run Clippy
+        run: >
+          cargo clippy
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --all-targets
+          --all-features
+          -- -D warnings
+
+      - name: Run tests
+        run: >
+          cargo test
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --all-features
+
+      - name: Run Console integration demo
+        run: >
+          cargo run
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+          --
+          mesh-demo
+
+  platform:
+    name: Platform Smoke (${{ matrix.os }})
+    needs: scope
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build Console
+        run: >
+          cargo build
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+
+      - name: Run Console integration demo
+        run: >
+          cargo run
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+          --
+          mesh-demo
+
+  gate:
+    name: Console Gate
+    if: always()
+
+    needs:
+      - scope
+      - quality
+      - platform
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Console CI result
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          PLATFORM_RESULT: ${{ needs.platform.result }}
+        run: |
+          if [ "$SCOPE_RESULT" != "success" ] \
+            || [ "$QUALITY_RESULT" != "success" ] \
+            || [ "$PLATFORM_RESULT" != "success" ]; then
+            echo "::error::Console CI failed."
+            echo "Scope:    $SCOPE_RESULT"
+            echo "Quality:  $QUALITY_RESULT"
+            echo "Platform: $PLATFORM_RESULT"
+            exit 1
+          fi
