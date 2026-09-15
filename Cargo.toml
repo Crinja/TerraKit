@@ -3,7 +3,6 @@ resolver = "3"
 members = [
     "engine/*",
     "generation/*",
-    "interfaces/terrakit-console",
     "tools/xtask",
 ]
 
@@ -15,11 +14,11 @@ description = "Deterministic terrain generation primitives, pipelines, runtime, 
 readme = "README.md"
 
 [workspace.dependencies]
-terrakit-core = { path = "engine/terrakit-core", version = "0.0.2" }
-terrakit-pipeline = { path = "engine/terrakit-pipeline", version = "0.0.2" }
-terrakit-runtime = { path = "engine/terrakit-runtime", version = "0.0.2" }
-terrakit-algorithms = { path = "generation/terrakit-algorithms", version = "0.0.2" }
-terrakit-builtins = { path = "generation/terrakit-builtins", version = "0.0.2" }
+terrakit-core = { path = "engine/terrakit-core" }
+terrakit-pipeline = { path = "engine/terrakit-pipeline" }
+terrakit-runtime = { path = "engine/terrakit-runtime" }
+terrakit-algorithms = { path = "generation/terrakit-algorithms" }
+terrakit-builtins = { path = "generation/terrakit-builtins" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
