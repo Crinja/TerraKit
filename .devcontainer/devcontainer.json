@@ -28,6 +28,6 @@
       }
     }
   },
-  "postCreateCommand": "rustup component add rustfmt clippy && cargo fetch",
+  "postCreateCommand": "cargo fetch",
   "remoteUser": "vscode"
 }

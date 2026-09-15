@@ -10,7 +10,6 @@ RUN apt-get update \
         pkg-config \
         curl \
         git \
-        make \
         ca-certificates \
     && curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh \
         | bash -s -- -b /usr/local/bin \
