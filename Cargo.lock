@@ -30,17 +30,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "terrakit-console"
-version = "0.0.2"
-dependencies = [
- "terrakit-algorithms",
- "terrakit-builtins",
- "terrakit-core",
- "terrakit-pipeline",
- "terrakit-runtime",
-]
-
-[[package]]
 name = "terrakit-core"
 version = "0.0.2"
 
