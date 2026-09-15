@@ -1,0 +1,141 @@
+name: Reusable Release State
+
+on:
+  workflow_call:
+    inputs:
+      version_path:
+        required: true
+        type: string
+      version_kind:
+        required: true
+        type: string
+      tag_prefix:
+        required: true
+        type: string
+    outputs:
+      version:
+        value: ${{ jobs.state.outputs.version }}
+      tag:
+        value: ${{ jobs.state.outputs.tag }}
+      previous_tag:
+        value: ${{ jobs.state.outputs.previous_tag }}
+      release:
+        value: ${{ jobs.state.outputs.release }}
+
+permissions:
+  contents: read
+
+jobs:
+  state:
+    name: Release State
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      tag: ${{ steps.info.outputs.tag }}
+      previous_tag: ${{ steps.check.outputs.previous_tag }}
+      release: ${{ steps.check.outputs.release }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read component version
+        id: info
+        shell: bash
+        env:
+          VERSION_PATH: ${{ inputs.version_path }}
+          VERSION_KIND: ${{ inputs.version_kind }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import configparser
+          import os
+          import re
+          import tomllib
+
+          path = os.environ["VERSION_PATH"]
+          kind = os.environ["VERSION_KIND"]
+
+          with open(path, "rb") as handle:
+              data = handle.read()
+
+          if kind == "cargo-workspace":
+              version = tomllib.loads(data.decode())["workspace"]["package"]["version"]
+          elif kind == "cargo-package":
+              version = tomllib.loads(data.decode())["package"]["version"]
+          elif kind == "godot-plugin":
+              parser = configparser.ConfigParser(interpolation=None)
+              parser.read_string(data.decode())
+              version = parser["plugin"]["version"]
+          else:
+              raise SystemExit(f"unknown version kind: {kind}")
+
+          if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+              raise SystemExit(f"release version must currently be stable X.Y.Z SemVer; got {version!r}")
+
+          tag = f"{os.environ['TAG_PREFIX']}{version}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+              output.write(f"tag={tag}\n")
+
+          print(f"Version: {version}")
+          print(f"Tag:     {tag}")
+          PY
+
+      - name: Check release state
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.info.outputs.version }}
+          RELEASE_TAG: ${{ steps.info.outputs.tag }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$RELEASE_TAG is already released."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "previous_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $RELEASE_TAG exists but has no matching GitHub Release."
+            exit 1
+          fi
+
+          PREVIOUS_TAG="$(
+            git tag --list "${TAG_PREFIX}*" --sort=-v:refname | head -n 1
+          )"
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            PREVIOUS_VERSION="${PREVIOUS_TAG#"$TAG_PREFIX"}"
+
+            python3 - "$PREVIOUS_VERSION" "$RELEASE_VERSION" <<'PY'
+          import re
+          import sys
+
+          def semver(value):
+              match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value)
+              if not match:
+                  raise SystemExit(f"invalid stable SemVer: {value}")
+              return tuple(int(part) for part in match.groups())
+
+          previous = semver(sys.argv[1])
+          current = semver(sys.argv[2])
+
+          if current <= previous:
+              raise SystemExit(
+                  f"release version {sys.argv[2]} must be greater than previous release {sys.argv[1]}"
+              )
+          PY
+          fi
+
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"

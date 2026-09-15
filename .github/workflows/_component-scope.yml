@@ -1,0 +1,105 @@
+name: Reusable Component Scope
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      scope_mode:
+        required: true
+        type: string
+      scope_pattern:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    name: Scope Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Enforce component ownership
+        shell: bash
+        env:
+          COMPONENT_BRANCH: ${{ inputs.branch }}
+          SCOPE_MODE: ${{ inputs.scope_mode }}
+          SCOPE_PATTERN: ${{ inputs.scope_pattern }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # main -> component is the authorised upstream sync. Changes outside
+          # the component's ownership are expected because they originated on main.
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && [ "$BASE_REF" = "$COMPONENT_BRANCH" ] \
+            && [ "$HEAD_REF" = "main" ]; then
+            echo "Authorised main -> $COMPONENT_BRANCH sync."
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && [ "$BASE_REF" = "$COMPONENT_BRANCH" ]; then
+            CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          elif [ "$EVENT_NAME" = "pull_request" ] \
+            && [ "$BASE_REF" = "main" ] \
+            && [ "$HEAD_REF" = "$COMPONENT_BRANCH" ]; then
+            CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          elif [ "$EVENT_NAME" = "push" ] \
+            && [ "$GITHUB_REF_NAME" = "$COMPONENT_BRANCH" ]; then
+            git fetch origin main --no-tags
+            CHANGED_FILES="$(git diff --name-only origin/main...HEAD)"
+          else
+            echo "No component-scope enforcement required for this event."
+            exit 0
+          fi
+
+          echo "Changed component-owned divergence:"
+          printf '%s\n' "$CHANGED_FILES"
+
+          case "$SCOPE_MODE" in
+            include)
+              FORBIDDEN="$(
+                printf '%s\n' "$CHANGED_FILES" \
+                  | grep -v '^$' \
+                  | grep -Ev "$SCOPE_PATTERN" \
+                  || true
+              )"
+              ;;
+
+            exclude)
+              FORBIDDEN="$(
+                printf '%s\n' "$CHANGED_FILES" \
+                  | grep -v '^$' \
+                  | grep -E "$SCOPE_PATTERN" \
+                  || true
+              )"
+              ;;
+
+            *)
+              echo "::error::Unknown scope mode: $SCOPE_MODE"
+              exit 1
+              ;;
+          esac
+
+          if [ -n "$FORBIDDEN" ]; then
+            echo
+            echo "::error::Branch contains changes outside its ownership boundary."
+            echo "Forbidden paths:"
+            printf '%s\n' "$FORBIDDEN"
+            exit 1
+          fi
+
+          echo "Component ownership boundary satisfied."

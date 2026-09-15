@@ -3,7 +3,6 @@ name: Console Release
 on:
   push:
     branches: [main]
-
   workflow_dispatch:
 
 permissions:
@@ -21,111 +20,27 @@ env:
 jobs:
   prepare:
     name: Prepare Release
-
-    runs-on: ubuntu-latest
-
-    outputs:
-      version: ${{ steps.info.outputs.version }}
-      core_version: ${{ steps.info.outputs.core_version }}
-      tag: ${{ steps.info.outputs.tag }}
-      previous_tag: ${{ steps.state.outputs.previous_tag }}
-      release: ${{ steps.state.outputs.release }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Read release information
-        id: info
-        shell: bash
-        run: |
-          python3 <<'PY'
-          import os
-          import tomllib
-
-          with open("interfaces/terrakit-console/Cargo.toml", "rb") as handle:
-              console = tomllib.load(handle)
-
-          with open("Cargo.toml", "rb") as handle:
-              root = tomllib.load(handle)
-
-          version = console["package"]["version"]
-          core_version = root["workspace"]["package"]["version"]
-          tag = f"terrakit-console-v{version}"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"version={version}\n")
-              handle.write(f"core_version={core_version}\n")
-              handle.write(f"tag={tag}\n")
-
-          print(f"TerraKit Console {version}")
-          print(f"TerraKit core {core_version}")
-          print(f"Tag {tag}")
-          PY
-
-      - name: Check release state
-        id: state
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.info.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          if gh release view \
-            "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            >/dev/null 2>&1; then
-
-            echo "$RELEASE_TAG is already released."
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "previous_tag=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if git ls-remote \
-            --exit-code \
-            --tags origin \
-            "refs/tags/$RELEASE_TAG" \
-            >/dev/null 2>&1; then
-
-            echo "::error::Tag $RELEASE_TAG exists without a matching GitHub Release."
-            exit 1
-          fi
-
-          PREVIOUS_TAG="$(
-            git tag \
-              --list 'terrakit-console-v*' \
-              --sort=-v:refname \
-              | head -n 1
-          )"
-
-          echo "release=true" >> "$GITHUB_OUTPUT"
-          echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+    uses: ./.github/workflows/_release-state.yml
+    with:
+      version_path: interfaces/terrakit-console/Cargo.toml
+      version_kind: cargo-package
+      tag_prefix: terrakit-console-v
 
   validate:
     name: Validate Release
-
     needs: prepare
-
     if: needs.prepare.outputs.release == 'true'
-
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Check formatting
-        run: >
-          cargo fmt
-          --manifest-path interfaces/terrakit-console/Cargo.toml
-          -- --check
+        run: cargo fmt --manifest-path interfaces/terrakit-console/Cargo.toml --check
 
       - name: Run Clippy
-        run: >
+        run: >-
           cargo clippy
           --manifest-path interfaces/terrakit-console/Cargo.toml
           --all-targets
@@ -133,27 +48,23 @@ jobs:
           -- -D warnings
 
       - name: Run tests
-        run: >
+        run: >-
           cargo test
           --manifest-path interfaces/terrakit-console/Cargo.toml
           --all-features
 
       - name: Run integration demo
-        run: >
+        run: >-
           cargo run
           --manifest-path interfaces/terrakit-console/Cargo.toml
           --release
-          --
-          mesh-demo
+          -- mesh-demo
 
   build:
     name: Build (${{ matrix.os }})
-
-    needs:
-      - prepare
-      - validate
-
+    needs: [prepare, validate]
     if: needs.prepare.outputs.release == 'true'
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
@@ -163,11 +74,8 @@ jobs:
           - windows-latest
           - macos-latest
 
-    runs-on: ${{ matrix.os }}
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Configure MSVC
@@ -179,105 +87,54 @@ jobs:
         shell: bash
         run: |
           TARGET="$(rustc -vV | sed -n 's/^host: //p')"
-          echo "triple=$TARGET" >> "$GITHUB_OUTPUT"
-          echo "Target: $TARGET"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
 
       - name: Build Console
-        run: >
+        run: >-
           cargo build
           --manifest-path interfaces/terrakit-console/Cargo.toml
           --release
-
-      - name: Run Console
-        run: >
-          cargo run
-          --manifest-path interfaces/terrakit-console/Cargo.toml
-          --release
-          --
-          mesh-demo
 
       - name: Package Console
         if: runner.os != 'Windows'
         shell: bash
         env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          TARGET_TRIPLE: ${{ steps.target.outputs.triple }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ steps.target.outputs.target }}
         run: |
           set -euo pipefail
-
           mkdir -p dist/console
-
-          ARCHIVE_NAME="terrakit-console-${RELEASE_VERSION}-${TARGET_TRIPLE}.tar.gz"
-          ARCHIVE_PATH="dist/console/${ARCHIVE_NAME}"
-
-          tar \
-            -C "$CARGO_TARGET_DIR/release" \
-            -czf "$ARCHIVE_PATH" \
-            terrakit-console
-
-          HASH="$(
-            shasum -a 256 "$ARCHIVE_PATH" \
-              | awk '{print $1}'
-          )"
-
-          printf '%s  %s\n' \
-            "$HASH" \
-            "$ARCHIVE_NAME" \
-            > "${ARCHIVE_PATH}.sha256"
+          NAME="terrakit-console-${VERSION}-${TARGET}.tar.gz"
+          tar -C "$CARGO_TARGET_DIR/release" -czf "dist/console/$NAME" terrakit-console
+          HASH="$(shasum -a 256 "dist/console/$NAME" | awk '{print $1}')"
+          printf '%s  %s\n' "$HASH" "$NAME" > "dist/console/$NAME.sha256"
 
       - name: Package Console
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          TARGET_TRIPLE: ${{ steps.target.outputs.triple }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ steps.target.outputs.target }}
         run: |
-          New-Item `
-            -ItemType Directory `
-            -Force `
-            "dist/console" |
-            Out-Null
+          New-Item -ItemType Directory -Force "dist/console" | Out-Null
+          $name = "terrakit-console-$env:VERSION-$env:TARGET.zip"
+          $path = Join-Path "dist/console" $name
+          $binary = Join-Path $env:CARGO_TARGET_DIR "release/terrakit-console.exe"
+          Compress-Archive -Path $binary -DestinationPath $path
+          $hash = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Path "$path.sha256" -Encoding ascii
 
-          $archiveName =
-            "terrakit-console-$env:RELEASE_VERSION-$env:TARGET_TRIPLE.zip"
-
-          $archivePath =
-            Join-Path "dist/console" $archiveName
-
-          $binaryPath =
-            Join-Path $env:CARGO_TARGET_DIR "release/terrakit-console.exe"
-
-          Compress-Archive `
-            -Path $binaryPath `
-            -DestinationPath $archivePath
-
-          $hash =
-            (Get-FileHash `
-              -Algorithm SHA256 `
-              $archivePath).Hash.ToLowerInvariant()
-
-          "$hash  $archiveName" |
-            Set-Content `
-              -Path "$archivePath.sha256" `
-              -Encoding ascii
-
-      - name: Upload release archive
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: terrakit-console-${{ steps.target.outputs.triple }}
+          name: terrakit-console-${{ steps.target.outputs.target }}
           path: dist/console/*
           if-no-files-found: error
 
   publish:
     name: Publish Release
-
-    needs:
-      - prepare
-      - validate
-      - build
-
+    needs: [prepare, validate, build]
     if: needs.prepare.outputs.release == 'true'
-
     runs-on: ubuntu-latest
 
     permissions:
@@ -295,92 +152,39 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Verify release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          find release-assets \
-            -maxdepth 1 \
-            -type f \
-            -print
-
-          ARCHIVES="$(
-            find release-assets \
-              -maxdepth 1 \
-              -type f \
-              \( -name '*.zip' -o -name '*.tar.gz' \) \
-              | wc -l
-          )"
-
-          CHECKSUMS="$(
-            find release-assets \
-              -maxdepth 1 \
-              -type f \
-              -name '*.sha256' \
-              | wc -l
-          )"
-
-          if [ "$ARCHIVES" -ne 3 ]; then
-            echo "::error::Expected 3 Console archives, found $ARCHIVES."
-            exit 1
-          fi
-
-          if [ "$CHECKSUMS" -ne 3 ]; then
-            echo "::error::Expected 3 Console checksums, found $CHECKSUMS."
-            exit 1
-          fi
-
-      - name: Generate release notes
+      - name: Generate scoped release notes
         shell: bash
         env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          CORE_VERSION: ${{ needs.prepare.outputs.core_version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
         run: |
           set -euo pipefail
-
           {
-            echo "TerraKit Console ${RELEASE_VERSION}"
-            echo
-            echo "Built against TerraKit ${CORE_VERSION}."
+            echo "TerraKit Console ${VERSION}"
             echo
             echo "## Console changes"
             echo
-
             if [ -n "$PREVIOUS_TAG" ]; then
-              CHANGES="$(
-                git log \
-                  --no-merges \
-                  --pretty=format:'- %s (%h)' \
-                  "$PREVIOUS_TAG..$GITHUB_SHA" \
-                  -- interfaces/terrakit-console
-              )"
-
-              if [ -n "$CHANGES" ]; then
-                echo "$CHANGES"
-              else
-                echo "- No Console-path changes recorded."
-              fi
+              CHANGES="$(git log --no-merges --pretty=format:'- %s (%h)' "$PREVIOUS_TAG..$GITHUB_SHA" -- interfaces/terrakit-console)"
+              if [ -n "$CHANGES" ]; then echo "$CHANGES"; else echo "- No Console-path changes recorded."; fi
             else
               echo "- Initial standalone Console release."
             fi
           } > release-notes.md
 
-          cat release-notes.md
-
       - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
+          set -euo pipefail
           gh release create \
-            "$RELEASE_TAG" \
+            "$TAG" \
             release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "TerraKit Console $RELEASE_VERSION" \
+            --title "TerraKit Console $VERSION" \
             --notes-file release-notes.md \
             --latest=false

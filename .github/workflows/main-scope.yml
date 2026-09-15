@@ -1,0 +1,122 @@
+name: Main Scope
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-scope-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    name: Main Scope Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce promotion ownership and version bump
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+
+          echo "Promotion branch: $HEAD_REF"
+          echo "Changed files:"
+          printf '%s\n' "$CHANGED_FILES"
+
+          case "$HEAD_REF" in
+            tk)
+              VERSION_PATH="Cargo.toml"
+              VERSION_KIND="cargo-workspace"
+              FORBIDDEN="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^interfaces/' || true)"
+              ;;
+
+            console)
+              VERSION_PATH="interfaces/terrakit-console/Cargo.toml"
+              VERSION_KIND="cargo-package"
+              FORBIDDEN="$(
+                printf '%s\n' "$CHANGED_FILES" \
+                  | grep -v '^$' \
+                  | grep -Ev '^interfaces/terrakit-console/' \
+                  || true
+              )"
+              ;;
+
+            godot)
+              VERSION_PATH="interfaces/terrakit-godot/addon/addons/terrakit/plugin.cfg"
+              VERSION_KIND="godot-plugin"
+              FORBIDDEN="$(
+                printf '%s\n' "$CHANGED_FILES" \
+                  | grep -v '^$' \
+                  | grep -Ev '^interfaces/terrakit-godot/' \
+                  || true
+              )"
+              ;;
+
+            *)
+              echo "::error::main only accepts promotion PRs from tk, console, or godot."
+              exit 1
+              ;;
+          esac
+
+          if [ -n "$FORBIDDEN" ]; then
+            echo "::error::Promotion contains files outside the component's ownership boundary."
+            printf '%s\n' "$FORBIDDEN"
+            exit 1
+          fi
+
+          git show "$BASE_SHA:$VERSION_PATH" > /tmp/base-version-source
+          git show "$HEAD_SHA:$VERSION_PATH" > /tmp/head-version-source
+
+          export VERSION_KIND
+          python3 <<'PY'
+          import configparser
+          import os
+          import re
+          import tomllib
+
+          kind = os.environ["VERSION_KIND"]
+
+          def read(path):
+              with open(path, "rb") as handle:
+                  data = handle.read()
+
+              if kind == "cargo-workspace":
+                  return tomllib.loads(data.decode())["workspace"]["package"]["version"]
+              if kind == "cargo-package":
+                  return tomllib.loads(data.decode())["package"]["version"]
+              if kind == "godot-plugin":
+                  parser = configparser.ConfigParser(interpolation=None)
+                  parser.read_string(data.decode())
+                  return parser["plugin"]["version"]
+              raise SystemExit(f"unknown version kind: {kind}")
+
+          def semver(value):
+              match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value)
+              if not match:
+                  raise SystemExit(f"release versions must use stable X.Y.Z SemVer; got {value!r}")
+              return tuple(int(part) for part in match.groups())
+
+          base_version = read("/tmp/base-version-source")
+          head_version = read("/tmp/head-version-source")
+
+          print(f"main version:      {base_version}")
+          print(f"promotion version: {head_version}")
+
+          if semver(head_version) <= semver(base_version):
+              raise SystemExit(
+                  f"promotion must increase its component version: {base_version} -> {head_version}"
+              )
+          PY

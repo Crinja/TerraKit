@@ -3,7 +3,6 @@ name: TerraKit Release
 on:
   push:
     branches: [main]
-
   workflow_dispatch:
 
 permissions:
@@ -20,81 +19,20 @@ env:
 jobs:
   prepare:
     name: Prepare Release
-    runs-on: ubuntu-latest
-
-    outputs:
-      version: ${{ steps.release.outputs.version }}
-      tag: ${{ steps.release.outputs.tag }}
-      previous_tag: ${{ steps.state.outputs.previous_tag }}
-      release: ${{ steps.state.outputs.release }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Read TerraKit release information
-        id: release
-        run: cargo run --quiet -p terrakit-xtask -- release-info
-
-      - name: Check release state
-        id: state
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          echo "Checking $RELEASE_TAG"
-
-          if gh release view "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            >/dev/null 2>&1
-          then
-            echo "$RELEASE_TAG is already released."
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "previous_tag=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if git ls-remote \
-            --exit-code \
-            --tags origin \
-            "refs/tags/$RELEASE_TAG" \
-            >/dev/null 2>&1
-          then
-            echo "::error::Tag $RELEASE_TAG exists, but no matching GitHub Release exists."
-            exit 1
-          fi
-
-          PREVIOUS_TAG="$(
-            git tag \
-              --list 'terrakit-v*' \
-              --sort=-v:refname \
-              | head -n 1
-          )"
-
-          echo "release=true" >> "$GITHUB_OUTPUT"
-          echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$PREVIOUS_TAG" ]; then
-            echo "Previous TerraKit release: $PREVIOUS_TAG"
-          else
-            echo "No previous TerraKit release found."
-          fi
+    uses: ./.github/workflows/_release-state.yml
+    with:
+      version_path: Cargo.toml
+      version_kind: cargo-workspace
+      tag_prefix: terrakit-v
 
   validate:
     name: Validate Release
     needs: prepare
-
     if: needs.prepare.outputs.release == 'true'
-
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Run release checks
@@ -102,12 +40,9 @@ jobs:
 
   build:
     name: Build (${{ matrix.os }})
-
-    needs:
-      - prepare
-      - validate
-
+    needs: [prepare, validate]
     if: needs.prepare.outputs.release == 'true'
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
@@ -117,11 +52,8 @@ jobs:
           - windows-latest
           - macos-latest
 
-    runs-on: ${{ matrix.os }}
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Configure MSVC
@@ -136,96 +68,94 @@ jobs:
         run: cargo build --locked -p terrakit-c-api --all-features --release
 
       - name: Verify exported symbols
-        run: >
+        run: >-
           cargo run --quiet -p terrakit-xtask --
           c-symbol-check
           --target-dir target/release
 
       - name: Package TerraKit C ABI
-        run: >
+        run: >-
           cargo run --quiet -p terrakit-xtask --
           package-c-api
           --target-dir target/release
           --target-triple "${{ steps.target.outputs.target }}"
 
-      - name: Create release archive
-        id: archive
-        run: >
+      - name: Create archive and checksum
+        run: >-
           cargo run --quiet -p terrakit-xtask --
           archive-c-package
           --target-triple "${{ steps.target.outputs.target }}"
 
-      - name: Upload release archive
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: terrakit-${{ steps.target.outputs.target }}
+          name: terrakit-core-${{ steps.target.outputs.target }}
           path: dist/archives/*
           if-no-files-found: error
 
   publish:
     name: Publish Release
-
-    needs:
-      - prepare
-      - validate
-      - build
-
+    needs: [prepare, validate, build]
     if: needs.prepare.outputs.release == 'true'
-
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: terrakit-*
+          pattern: terrakit-core-*
           path: release-assets
           merge-multiple: true
 
       - name: Verify release assets
         shell: bash
         run: |
-          echo "Release assets:"
-          find release-assets -maxdepth 1 -type f -print
+          set -euo pipefail
+          ARCHIVES="$(find release-assets -maxdepth 1 -type f -name '*.zip' | wc -l)"
+          CHECKSUMS="$(find release-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)"
+          [ "$ARCHIVES" -eq 3 ] || { echo "::error::Expected 3 archives, found $ARCHIVES"; exit 1; }
+          [ "$CHECKSUMS" -eq 3 ] || { echo "::error::Expected 3 checksums, found $CHECKSUMS"; exit 1; }
 
-          ARCHIVES="$(find release-assets -maxdepth 1 -name '*.zip' | wc -l)"
-          CHECKSUMS="$(find release-assets -maxdepth 1 -name '*.sha256' | wc -l)"
-
-          if [ "$ARCHIVES" -ne 3 ]; then
-            echo "::error::Expected 3 release archives, found $ARCHIVES."
-            exit 1
-          fi
-
-          if [ "$CHECKSUMS" -ne 3 ]; then
-            echo "::error::Expected 3 checksums, found $CHECKSUMS."
-            exit 1
-          fi
+      - name: Generate scoped release notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          {
+            echo "TerraKit ${VERSION}"
+            echo
+            echo "## TerraKit changes"
+            echo
+            if [ -n "$PREVIOUS_TAG" ]; then
+              CHANGES="$(git log --no-merges --pretty=format:'- %s (%h)' "$PREVIOUS_TAG..$GITHUB_SHA" -- . ':(exclude)interfaces/**')"
+              if [ -n "$CHANGES" ]; then echo "$CHANGES"; else echo "- No core-path changes recorded."; fi
+            else
+              echo "- Initial release in the terrakit-v* release line."
+            fi
+          } > release-notes.md
 
       - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          ARGS=(
-            "$RELEASE_TAG"
-            release-assets/*
-            --repo "$GITHUB_REPOSITORY"
-            --target "$GITHUB_SHA"
-            --title "TerraKit $RELEASE_VERSION"
-            --generate-notes
+          set -euo pipefail
+          gh release create \
+            "$TAG" \
+            release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TerraKit $VERSION" \
+            --notes-file release-notes.md \
             --latest
-          )
-
-          if [ -n "$PREVIOUS_TAG" ]; then
-            ARGS+=(
-              --notes-start-tag "$PREVIOUS_TAG"
-            )
-          fi
-
-          gh release create "${ARGS[@]}"
