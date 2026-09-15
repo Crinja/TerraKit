@@ -132,12 +132,31 @@ jobs:
                   return parser["plugin"]["version"]
               raise SystemExit(f"unknown version kind: {kind}")
 
+          def normalize_version(value: str) -> str:
+              value = value.strip()
+            
+              if (
+                  len(value) >= 2
+                  and value[0] == value[-1]
+                  and value[0] in {'"', "'"}
+              ):
+                  value = value[1:-1].strip()
+          
+              return value
+
           def semver(value: str):
-              match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value)
-              if not match:
+              value = normalize_version(value)
+
+              match = re.fullmatch(
+                  r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)",
+                  value,
+              )
+          
+              if match is None:
                   raise SystemExit(
-                      f"release versions must currently use stable X.Y.Z SemVer; got {value!r}"
+                      f"release versions must use stable X.Y.Z SemVer; got {value!r}"
                   )
+          
               return tuple(int(part) for part in match.groups())
 
           with open(path, "rb") as handle:
