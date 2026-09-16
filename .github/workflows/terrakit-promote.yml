@@ -15,6 +15,6 @@ jobs:
       version_kind: cargo-workspace
       tag_prefix: terrakit-v
       scope_mode: exclude
-      scope_pattern: '^interfaces/|^\.github/(?!workflows/terrakit-.*\.ya?ml$)|^\.devcontainer/|^\.vscode/|^tools/release/|^docs/|^(README\.md|CONTRIBUTING\.md|SECURITY\.md|CODE_OF_CONDUCT\.md|LICENSE|\.gitignore|\.gitattributes|\.gitmodules|\.editorconfig|\.dockerignore|rust-toolchain\.toml)$'
+      scope_pattern: '^interfaces/'
     secrets:
       automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}

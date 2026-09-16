@@ -15,6 +15,6 @@ jobs:
       version_kind: cargo-package
       tag_prefix: terrakit-console-v
       scope_mode: include
-      scope_pattern: '^(interfaces/terrakit-console/|\.github/workflows/console-.*\.ya?ml$)'
+      scope_pattern: '^interfaces/terrakit-console/'
     secrets:
       automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}

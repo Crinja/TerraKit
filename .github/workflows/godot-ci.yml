@@ -25,7 +25,7 @@ jobs:
     with:
       branch: godot
       scope_mode: include
-      scope_pattern: '^(interfaces/terrakit-godot/|\.github/workflows/godot-.*\.ya?ml$)'
+      scope_pattern: '^interfaces/terrakit-godot/'
 
   build:
     name: Build (${{ matrix.platform }})
@@ -59,8 +59,6 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # CI proves compatibility only. Optimized production compilation belongs
-      # in godot-release.yml.
       - name: Build TerraKit debug C ABI
         run: cargo build -p terrakit-c-api --all-features
 
@@ -72,6 +70,18 @@ jobs:
           target=template_debug
           arch=x86_64
           terrakit_profile=debug
+
+      - name: Build TerraKit release C ABI
+        run: cargo build -p terrakit-c-api --all-features --release
+
+      - name: Build Godot release extension
+        working-directory: interfaces/terrakit-godot
+        run: >-
+          scons
+          platform=${{ matrix.platform }}
+          target=template_release
+          arch=x86_64
+          terrakit_profile=release
 
   gate:
     name: Godot Gate
@@ -86,9 +96,8 @@ jobs:
           SCOPE_RESULT: ${{ needs.scope.result }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
-          set -euo pipefail
-
-          if [ "$SCOPE_RESULT" != "success" ]             || [ "$BUILD_RESULT" != "success" ]; then
+          if [ "$SCOPE_RESULT" != "success" ] \
+            || [ "$BUILD_RESULT" != "success" ]; then
             echo "::error::Godot CI failed."
             echo "Scope: $SCOPE_RESULT"
             echo "Build: $BUILD_RESULT"

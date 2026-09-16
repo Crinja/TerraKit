@@ -26,7 +26,7 @@ jobs:
     with:
       branch: console
       scope_mode: include
-      scope_pattern: '^(interfaces/terrakit-console/|\.github/workflows/console-.*\.ya?ml$)'
+      scope_pattern: '^interfaces/terrakit-console/'
 
   quality:
     name: Quality Gate
@@ -38,10 +38,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Check formatting
-        run: >-
-          cargo fmt
-          --manifest-path interfaces/terrakit-console/Cargo.toml
-          --check
+        run: cargo fmt --manifest-path interfaces/terrakit-console/Cargo.toml --check
 
       - name: Run Clippy
         run: >-
@@ -111,9 +108,9 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           PLATFORM_RESULT: ${{ needs.platform.result }}
         run: |
-          set -euo pipefail
-
-          if [ "$SCOPE_RESULT" != "success" ]             || [ "$QUALITY_RESULT" != "success" ]             || [ "$PLATFORM_RESULT" != "success" ]; then
+          if [ "$SCOPE_RESULT" != "success" ] \
+            || [ "$QUALITY_RESULT" != "success" ] \
+            || [ "$PLATFORM_RESULT" != "success" ]; then
             echo "::error::Console CI failed."
             echo "Scope:    $SCOPE_RESULT"
             echo "Quality:  $QUALITY_RESULT"
