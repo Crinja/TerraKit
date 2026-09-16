@@ -41,8 +41,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # main -> component is the authorised upstream sync. Changes outside
-          # the component's ownership are expected because they originated on main.
+          # main -> component is the authorised upstream sync.
+          # Changes outside component ownership are expected because they
+          # already originated on main.
           if [ "$EVENT_NAME" = "pull_request" ] \
             && [ "$BASE_REF" = "$COMPONENT_BRANCH" ] \
             && [ "$HEAD_REF" = "main" ]; then
@@ -50,56 +51,95 @@ jobs:
             exit 0
           fi
 
-          if [ "$EVENT_NAME" = "pull_request" ] \
-            && [ "$BASE_REF" = "$COMPONENT_BRANCH" ]; then
-            CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
-          elif [ "$EVENT_NAME" = "pull_request" ] \
-            && [ "$BASE_REF" = "main" ] \
-            && [ "$HEAD_REF" = "$COMPONENT_BRANCH" ]; then
-            CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
-          elif [ "$EVENT_NAME" = "push" ] \
+          if [ "$EVENT_NAME" = "push" ] \
             && [ "$GITHUB_REF_NAME" = "$COMPONENT_BRANCH" ]; then
             git fetch origin main --no-tags
-            CHANGED_FILES="$(git diff --name-only origin/main...HEAD)"
-          else
-            echo "No component-scope enforcement required for this event."
-            exit 0
           fi
 
-          echo "Changed component-owned divergence:"
-          printf '%s\n' "$CHANGED_FILES"
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
 
-          case "$SCOPE_MODE" in
-            include)
-              FORBIDDEN="$(
-                printf '%s\n' "$CHANGED_FILES" \
-                  | grep -v '^$' \
-                  | grep -Ev "$SCOPE_PATTERN" \
-                  || true
-              )"
-              ;;
+          component = os.environ["COMPONENT_BRANCH"]
+          mode = os.environ["SCOPE_MODE"]
+          pattern_text = os.environ["SCOPE_PATTERN"]
+          event = os.environ["EVENT_NAME"]
+          base_ref = os.environ["BASE_REF"]
+          head_ref = os.environ["HEAD_REF"]
+          base_sha = os.environ["BASE_SHA"]
+          head_sha = os.environ["HEAD_SHA"]
 
-            exclude)
-              FORBIDDEN="$(
-                printf '%s\n' "$CHANGED_FILES" \
-                  | grep -v '^$' \
-                  | grep -E "$SCOPE_PATTERN" \
-                  || true
-              )"
-              ;;
+          try:
+              pattern = re.compile(pattern_text)
+          except re.error as error:
+              raise SystemExit(
+                  f"invalid scope regex {pattern_text!r}: {error}"
+              )
 
-            *)
-              echo "::error::Unknown scope mode: $SCOPE_MODE"
-              exit 1
-              ;;
-          esac
+          if event == "pull_request" and base_ref == component:
+              comparison = f"{base_sha}...{head_sha}"
 
-          if [ -n "$FORBIDDEN" ]; then
-            echo
-            echo "::error::Branch contains changes outside its ownership boundary."
-            echo "Forbidden paths:"
-            printf '%s\n' "$FORBIDDEN"
-            exit 1
-          fi
+          elif (
+              event == "pull_request"
+              and base_ref == "main"
+              and head_ref == component
+          ):
+              comparison = f"{base_sha}...{head_sha}"
 
-          echo "Component ownership boundary satisfied."
+          elif (
+              event == "push"
+              and os.environ.get("GITHUB_REF_NAME") == component
+          ):
+              comparison = "origin/main...HEAD"
+
+          else:
+              print("No component-scope enforcement required for this event.")
+              raise SystemExit(0)
+
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", comparison],
+              text=True,
+          ).splitlines()
+
+          print("Changed component-owned divergence:")
+          if changed:
+              for path in changed:
+                  print(f"  {path}")
+          else:
+              print("  <none>")
+
+          if mode == "include":
+              forbidden = [
+                  path
+                  for path in changed
+                  if not pattern.search(path)
+              ]
+
+          elif mode == "exclude":
+              forbidden = [
+                  path
+                  for path in changed
+                  if pattern.search(path)
+              ]
+
+          else:
+              raise SystemExit(
+                  f"unknown scope mode {mode!r}; "
+                  "expected 'include' or 'exclude'"
+              )
+
+          if forbidden:
+              print(
+                  "::error::Branch contains changes outside "
+                  "its ownership boundary."
+              )
+              print("Forbidden paths:")
+
+              for path in forbidden:
+                  print(f"  {path}")
+
+              raise SystemExit(1)
+
+          print("Component ownership boundary satisfied.")
+          PY
