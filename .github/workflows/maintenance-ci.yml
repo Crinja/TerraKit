@@ -27,7 +27,7 @@ jobs:
     with:
       branch: maintenance
       scope_mode: include
-      scope_pattern: '^(\.github/|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)'
+      scope_pattern: '^(?:\.github/(?!workflows/(?:terrakit|console|godot)-.*\.ya?ml$)|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.gitmodules$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)'
 
   validate:
     name: Validate Repository Infrastructure
@@ -59,7 +59,9 @@ jobs:
           while IFS= read -r -d '' file; do
             echo "Validating $file"
             python3 -m json.tool "$file" >/dev/null
-          done < <(find .github/rulesets -type f -name '*.json' -print0)
+          done < <(
+            find .github/rulesets               -type f               -name '*.json'               -print0
+          )
 
       - name: Validate repository shell scripts
         shell: bash
@@ -74,7 +76,9 @@ jobs:
             while IFS= read -r -d '' file; do
               echo "Checking $file"
               bash -n "$file"
-            done < <(find "$root" -type f -name '*.sh' -print0)
+            done < <(
+              find "$root"                 -type f                 -name '*.sh'                 -print0
+            )
           done
 
       - name: Validate Rust toolchain file
@@ -110,8 +114,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$SCOPE_RESULT" != "success" ] \
-            || [ "$VALIDATE_RESULT" != "success" ]; then
+          if [ "$SCOPE_RESULT" != "success" ]             || [ "$VALIDATE_RESULT" != "success" ]; then
             echo "::error::Maintenance CI failed."
             echo "Scope:    $SCOPE_RESULT"
             echo "Validate: $VALIDATE_RESULT"
