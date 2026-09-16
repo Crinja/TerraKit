@@ -53,6 +53,7 @@ jobs:
 
           python3 <<'PY'
           import configparser
+          import json
           import os
           import re
           import tomllib
@@ -60,26 +61,82 @@ jobs:
           path = os.environ["VERSION_PATH"]
           kind = os.environ["VERSION_KIND"]
 
+          def normalize_version(value) -> str:
+              value = str(value).strip()
+
+              while (
+                  len(value) >= 2
+                  and value[0] == value[-1]
+                  and value[0] in {'"', "'"}
+              ):
+                  value = value[1:-1].strip()
+
+              return value
+
+          def read_version(data: bytes, kind: str) -> str:
+              text = data.decode("utf-8")
+
+              if kind == "cargo-workspace":
+                  value = (
+                      tomllib.loads(text)
+                      ["workspace"]
+                      ["package"]
+                      ["version"]
+                  )
+
+              elif kind == "cargo-package":
+                  value = (
+                      tomllib.loads(text)
+                      ["package"]
+                      ["version"]
+                  )
+
+              elif kind == "godot-plugin":
+                  parser = configparser.ConfigParser(
+                      interpolation=None
+                  )
+                  parser.read_string(text)
+                  value = parser["plugin"]["version"]
+
+              elif kind == "json-package":
+                  value = json.loads(text)["version"]
+
+              elif kind == "plain":
+                  value = text
+
+              else:
+                  raise SystemExit(
+                      f"unknown version kind: {kind!r}"
+                  )
+
+              return normalize_version(value)
+
           with open(path, "rb") as handle:
-              data = handle.read()
+              version = read_version(
+                  handle.read(),
+                  kind,
+              )
 
-          if kind == "cargo-workspace":
-              version = tomllib.loads(data.decode())["workspace"]["package"]["version"]
-          elif kind == "cargo-package":
-              version = tomllib.loads(data.decode())["package"]["version"]
-          elif kind == "godot-plugin":
-              parser = configparser.ConfigParser(interpolation=None)
-              parser.read_string(data.decode())
-              version = parser["plugin"]["version"]
-          else:
-              raise SystemExit(f"unknown version kind: {kind}")
-
-          if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
-              raise SystemExit(f"release version must currently be stable X.Y.Z SemVer; got {version!r}")
+          if not re.fullmatch(
+              r"(0|[1-9][0-9]*)"
+              r"\."
+              r"(0|[1-9][0-9]*)"
+              r"\."
+              r"(0|[1-9][0-9]*)",
+              version,
+          ):
+              raise SystemExit(
+                  "release version must currently be stable "
+                  f"X.Y.Z SemVer; got {version!r}"
+              )
 
           tag = f"{os.environ['TAG_PREFIX']}{version}"
 
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
               output.write(f"version={version}\n")
               output.write(f"tag={tag}\n")
 
@@ -98,20 +155,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view \
+            "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            >/dev/null 2>&1
+          then
             echo "$RELEASE_TAG is already released."
             echo "release=false" >> "$GITHUB_OUTPUT"
             echo "previous_tag=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+          if git ls-remote \
+            --exit-code \
+            --tags origin \
+            "refs/tags/$RELEASE_TAG" \
+            >/dev/null 2>&1
+          then
             echo "::error::Tag $RELEASE_TAG exists but has no matching GitHub Release."
             exit 1
           fi
 
           PREVIOUS_TAG="$(
-            git tag --list "${TAG_PREFIX}*" --sort=-v:refname | head -n 1
+            git tag \
+              --list "${TAG_PREFIX}*" \
+              --sort=-v:refname \
+              | head -n 1
           )"
 
           if [ -n "$PREVIOUS_TAG" ]; then
@@ -122,17 +191,32 @@ jobs:
           import sys
 
           def semver(value):
-              match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value)
+              match = re.fullmatch(
+                  r"(0|[1-9][0-9]*)"
+                  r"\."
+                  r"(0|[1-9][0-9]*)"
+                  r"\."
+                  r"(0|[1-9][0-9]*)",
+                  value.strip(),
+              )
+
               if not match:
-                  raise SystemExit(f"invalid stable SemVer: {value}")
-              return tuple(int(part) for part in match.groups())
+                  raise SystemExit(
+                      f"invalid stable SemVer: {value!r}"
+                  )
+
+              return tuple(
+                  int(part)
+                  for part in match.groups()
+              )
 
           previous = semver(sys.argv[1])
           current = semver(sys.argv[2])
 
           if current <= previous:
               raise SystemExit(
-                  f"release version {sys.argv[2]} must be greater than previous release {sys.argv[1]}"
+                  f"release version {sys.argv[2]} must be "
+                  f"greater than previous release {sys.argv[1]}"
               )
           PY
           fi

@@ -1,0 +1,163 @@
+name: PR Routing
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-routing-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  routing:
+    name: PR Routing Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate pull request route
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          echo "PR route: $HEAD_REF -> $BASE_REF"
+
+          case "$HEAD_REF" in
+
+            # ==========================================================
+            # TerraKit development
+            #
+            # <type>/tk/<description>
+            # ==========================================================
+
+            feature/tk/*|fix/tk/*|refactor/tk/*|chore/tk/*|version/tk/*)
+              EXPECTED_BASE="tk"
+              ;;
+
+            # ==========================================================
+            # Console development
+            #
+            # <type>/console/<description>
+            # ==========================================================
+
+            feature/console/*|fix/console/*|refactor/console/*|chore/console/*|version/console/*)
+              EXPECTED_BASE="console"
+              ;;
+
+            # ==========================================================
+            # Godot development
+            #
+            # <type>/godot/<description>
+            # ==========================================================
+
+            feature/godot/*|fix/godot/*|refactor/godot/*|chore/godot/*|version/godot/*)
+              EXPECTED_BASE="godot"
+              ;;
+
+            # ==========================================================
+            # Repository maintenance
+            #
+            # Maintenance is not a versioned product, so it does not
+            # support version/maintenance/*.
+            # ==========================================================
+
+            feature/maintenance/*|fix/maintenance/*|refactor/maintenance/*|chore/maintenance/*)
+              EXPECTED_BASE="maintenance"
+              ;;
+
+            # ==========================================================
+            # Persistent branch promotion
+            #
+            # Persistent branches may only promote into main.
+            # ==========================================================
+
+            tk|console|godot|maintenance)
+              EXPECTED_BASE="main"
+              ;;
+
+            # ==========================================================
+            # Main synchronization
+            #
+            # main may only flow back into persistent branches.
+            # ==========================================================
+
+            main)
+              case "$BASE_REF" in
+                tk|console|godot|maintenance)
+                  echo "Valid sync route: main -> $BASE_REF"
+                  exit 0
+                  ;;
+
+                *)
+                  echo "::error::main may only target a persistent branch."
+                  echo
+                  echo "Allowed routes:"
+                  echo "  main -> tk"
+                  echo "  main -> console"
+                  echo "  main -> godot"
+                  echo "  main -> maintenance"
+                  exit 1
+                  ;;
+              esac
+              ;;
+
+            # ==========================================================
+            # Unknown branch convention
+            # ==========================================================
+
+            *)
+              echo "::error::Unrecognized branch convention: '$HEAD_REF'"
+              echo
+              echo "Temporary branches must use:"
+              echo
+              echo "  feature/<component>/<name>"
+              echo "  fix/<component>/<name>"
+              echo "  refactor/<component>/<name>"
+              echo "  chore/<component>/<name>"
+              echo "  version/<component>/<version>"
+              echo
+              echo "Versioned components:"
+              echo "  tk"
+              echo "  console"
+              echo "  godot"
+              echo
+              echo "Maintenance branches:"
+              echo "  feature/maintenance/<name>"
+              echo "  fix/maintenance/<name>"
+              echo "  refactor/maintenance/<name>"
+              echo "  chore/maintenance/<name>"
+              echo
+              echo "Examples:"
+              echo "  feature/tk/plugin-system"
+              echo "  fix/console/windows-paths"
+              echo "  refactor/godot/native-loader"
+              echo "  chore/godot/ci-cache"
+              echo "  version/godot/0.2.0"
+              echo "  chore/maintenance/update-actions"
+              exit 1
+              ;;
+          esac
+
+          # ============================================================
+          # Verify target branch
+          # ============================================================
+
+          if [ "$BASE_REF" != "$EXPECTED_BASE" ]; then
+            echo "::error::Invalid PR target."
+            echo
+            echo "Branch:"
+            echo "  $HEAD_REF"
+            echo
+            echo "Expected target:"
+            echo "  $EXPECTED_BASE"
+            echo
+            echo "Actual target:"
+            echo "  $BASE_REF"
+            exit 1
+          fi
+
+          echo "Valid PR route: $HEAD_REF -> $BASE_REF"

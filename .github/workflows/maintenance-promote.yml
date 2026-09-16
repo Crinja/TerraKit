@@ -26,7 +26,9 @@ jobs:
 
       - name: Fetch main
         shell: bash
-        run: git fetch origin main --no-tags
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
 
       - name: Require current main
         id: ancestry
@@ -46,34 +48,73 @@ jobs:
         if: steps.ancestry.outputs.current == 'true'
         id: state
         shell: bash
+        env:
+          SCOPE_PATTERN: '^(?:\.github/(?!workflows/(?:terrakit|console|godot)-.*\.ya?ml$)|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.gitmodules$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)'
         run: |
           set -euo pipefail
 
-          CHANGED_FILES="$(git diff --name-only origin/main...HEAD)"
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
 
-          echo "Maintenance divergence:"
-          printf '%s\n' "$CHANGED_FILES"
+          pattern_text = os.environ["SCOPE_PATTERN"]
 
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "promote=false" >> "$GITHUB_OUTPUT"
-            echo "No maintenance changes to promote."
-            exit 0
-          fi
+          try:
+              pattern = re.compile(pattern_text)
+          except re.error as error:
+              raise SystemExit(
+                  f"invalid maintenance scope regex "
+                  f"{pattern_text!r}: {error}"
+              )
 
-          FORBIDDEN="$(
-            printf '%s\n' "$CHANGED_FILES" \
-              | grep -v '^$' \
-              | grep -Ev '^(\.github/|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)' \
-              || true
-          )"
+          changed = subprocess.check_output(
+              [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  "origin/main...HEAD",
+              ],
+              text=True,
+          ).splitlines()
 
-          if [ -n "$FORBIDDEN" ]; then
-            echo "::error::maintenance contains changes outside its ownership boundary."
-            printf '%s\n' "$FORBIDDEN"
-            exit 1
-          fi
+          print("Maintenance divergence:")
+          if changed:
+              for path in changed:
+                  print(f"  {path}")
+          else:
+              print("  <none>")
 
-          echo "promote=true" >> "$GITHUB_OUTPUT"
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              if not changed:
+                  output.write("promote=false\n")
+                  print("No maintenance changes to promote.")
+                  raise SystemExit(0)
+
+              forbidden = [
+                  path
+                  for path in changed
+                  if not pattern.search(path)
+              ]
+
+              if forbidden:
+                  print(
+                      "::error::maintenance contains changes "
+                      "outside its ownership boundary."
+                  )
+
+                  for path in forbidden:
+                      print(f"  {path}")
+
+                  raise SystemExit(1)
+
+              output.write("promote=true\n")
+              print("Maintenance changes are ready for promotion.")
+          PY
 
       - name: Create or reuse promotion PR
         if: >-
@@ -87,24 +128,14 @@ jobs:
           set -euo pipefail
 
           PR_NUMBER="$(
-            gh pr list \
-              --repo "$GITHUB_REPOSITORY" \
-              --state open \
-              --base main \
-              --head maintenance \
-              --json number \
-              --jq '.[0].number // empty'
+            gh pr list               --repo "$GITHUB_REPOSITORY"               --state open               --base main               --head maintenance               --json number               --jq '.[0].number // empty'
           )"
 
           if [ -z "$PR_NUMBER" ]; then
             PR_URL="$(
-              gh pr create \
-                --repo "$GITHUB_REPOSITORY" \
-                --base main \
-                --head maintenance \
-                --title "Promote repository maintenance" \
-                --body "Automated promotion of validated shared repository infrastructure and maintenance changes into the canonical \`main\` branch."
+              gh pr create                 --repo "$GITHUB_REPOSITORY"                 --base main                 --head maintenance                 --title "Promote repository maintenance"                 --body "Automated promotion of validated shared repository infrastructure and maintenance changes into the canonical \`main\` branch."
             )"
+
             PR_NUMBER="${PR_URL##*/}"
             echo "Created PR #$PR_NUMBER."
           else
@@ -124,8 +155,4 @@ jobs:
         run: |
           set -euo pipefail
 
-          gh pr merge \
-            "$PR_NUMBER" \
-            --repo "$GITHUB_REPOSITORY" \
-            --auto \
-            --merge
+          gh pr merge             "$PR_NUMBER"             --repo "$GITHUB_REPOSITORY"             --auto             --merge
