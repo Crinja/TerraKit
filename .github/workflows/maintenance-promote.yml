@@ -1,0 +1,131 @@
+name: Maintenance Promote
+
+on:
+  push:
+    branches: [maintenance]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote Maintenance To Main
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: maintenance
+
+      - name: Fetch main
+        shell: bash
+        run: git fetch origin main --no-tags
+
+      - name: Require current main
+        id: ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "maintenance does not yet contain current main."
+            echo "Promotion will wait for main -> maintenance sync."
+          fi
+
+      - name: Check maintenance divergence
+        if: steps.ancestry.outputs.current == 'true'
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES="$(git diff --name-only origin/main...HEAD)"
+
+          echo "Maintenance divergence:"
+          printf '%s\n' "$CHANGED_FILES"
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+            echo "No maintenance changes to promote."
+            exit 0
+          fi
+
+          FORBIDDEN="$(
+            printf '%s\n' "$CHANGED_FILES" \
+              | grep -v '^$' \
+              | grep -Ev '^(\.github/|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)' \
+              || true
+          )"
+
+          if [ -n "$FORBIDDEN" ]; then
+            echo "::error::maintenance contains changes outside its ownership boundary."
+            printf '%s\n' "$FORBIDDEN"
+            exit 1
+          fi
+
+          echo "promote=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse promotion PR
+        if: >-
+          steps.ancestry.outputs.current == 'true' &&
+          steps.state.outputs.promote == 'true'
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --base main \
+              --head maintenance \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL="$(
+              gh pr create \
+                --repo "$GITHUB_REPOSITORY" \
+                --base main \
+                --head maintenance \
+                --title "Promote repository maintenance" \
+                --body "Automated promotion of validated shared repository infrastructure and maintenance changes into the canonical \`main\` branch."
+            )"
+            PR_NUMBER="${PR_URL##*/}"
+            echo "Created PR #$PR_NUMBER."
+          else
+            echo "Using existing promotion PR #$PR_NUMBER."
+          fi
+
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: >-
+          steps.ancestry.outputs.current == 'true' &&
+          steps.state.outputs.promote == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+
+          gh pr merge \
+            "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --auto \
+            --merge

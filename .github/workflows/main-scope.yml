@@ -21,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Enforce promotion ownership and version bump
+      - name: Enforce promotion ownership and version policy
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -30,93 +30,167 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
-
-          echo "Promotion branch: $HEAD_REF"
-          echo "Changed files:"
-          printf '%s\n' "$CHANGED_FILES"
-
-          case "$HEAD_REF" in
-            tk)
-              VERSION_PATH="Cargo.toml"
-              VERSION_KIND="cargo-workspace"
-              FORBIDDEN="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^interfaces/' || true)"
-              ;;
-
-            console)
-              VERSION_PATH="interfaces/terrakit-console/Cargo.toml"
-              VERSION_KIND="cargo-package"
-              FORBIDDEN="$(
-                printf '%s\n' "$CHANGED_FILES" \
-                  | grep -v '^$' \
-                  | grep -Ev '^interfaces/terrakit-console/' \
-                  || true
-              )"
-              ;;
-
-            godot)
-              VERSION_PATH="interfaces/terrakit-godot/addon/addons/terrakit/plugin.cfg"
-              VERSION_KIND="godot-plugin"
-              FORBIDDEN="$(
-                printf '%s\n' "$CHANGED_FILES" \
-                  | grep -v '^$' \
-                  | grep -Ev '^interfaces/terrakit-godot/' \
-                  || true
-              )"
-              ;;
-
-            *)
-              echo "::error::main only accepts promotion PRs from tk, console, or godot."
-              exit 1
-              ;;
-          esac
-
-          if [ -n "$FORBIDDEN" ]; then
-            echo "::error::Promotion contains files outside the component's ownership boundary."
-            printf '%s\n' "$FORBIDDEN"
-            exit 1
-          fi
-
-          git show "$BASE_SHA:$VERSION_PATH" > /tmp/base-version-source
-          git show "$HEAD_SHA:$VERSION_PATH" > /tmp/head-version-source
-
-          export VERSION_KIND
           python3 <<'PY'
           import configparser
           import os
           import re
+          import subprocess
           import tomllib
 
-          kind = os.environ["VERSION_KIND"]
+          base_sha = os.environ["BASE_SHA"]
+          head_sha = os.environ["HEAD_SHA"]
+          head_ref = os.environ["HEAD_REF"]
 
-          def read(path):
-              with open(path, "rb") as handle:
-                  data = handle.read()
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", f"{base_sha}...{head_sha}"],
+              text=True,
+          ).splitlines()
+
+          print(f"Promotion branch: {head_ref}")
+          print("Changed files:")
+          for path in changed:
+              print(path)
+
+          component_workflow = {
+              "tk": re.compile(r"^\.github/workflows/terrakit-.*\.ya?ml$"),
+              "console": re.compile(r"^\.github/workflows/console-.*\.ya?ml$"),
+              "godot": re.compile(r"^\.github/workflows/godot-.*\.ya?ml$"),
+          }
+
+          maintenance_exact = {
+              "README.md",
+              "CONTRIBUTING.md",
+              "SECURITY.md",
+              "CODE_OF_CONDUCT.md",
+              "LICENSE",
+              ".gitignore",
+              ".gitattributes",
+              ".editorconfig",
+              ".dockerignore",
+              "rust-toolchain.toml",
+          }
+
+          def is_maintenance(path: str) -> bool:
+              return (
+                  path.startswith(".github/")
+                  or path.startswith(".devcontainer/")
+                  or path.startswith(".vscode/")
+                  or path.startswith("tools/release/")
+                  or path.startswith("docs/")
+                  or path in maintenance_exact
+              )
+
+          def forbidden_paths(branch: str):
+              bad = []
+
+              for path in changed:
+                  if branch == "tk":
+                      if path.startswith("interfaces/"):
+                          bad.append(path)
+                      elif path.startswith(".github/") and not component_workflow["tk"].match(path):
+                          bad.append(path)
+
+                  elif branch == "console":
+                      if not (
+                          path.startswith("interfaces/terrakit-console/")
+                          or component_workflow["console"].match(path)
+                      ):
+                          bad.append(path)
+
+                  elif branch == "godot":
+                      if not (
+                          path.startswith("interfaces/terrakit-godot/")
+                          or component_workflow["godot"].match(path)
+                      ):
+                          bad.append(path)
+
+                  elif branch == "maintenance":
+                      if not is_maintenance(path):
+                          bad.append(path)
+
+              return bad
+
+          if head_ref not in {"tk", "console", "godot", "maintenance"}:
+              raise SystemExit(
+                  "main only accepts promotion PRs from tk, console, godot, or maintenance"
+              )
+
+          bad = forbidden_paths(head_ref)
+          if bad:
+              print("::error::Promotion contains files outside the branch ownership boundary.")
+              for path in bad:
+                  print(path)
+              raise SystemExit(1)
+
+          # Maintenance promotions are infrastructure-only and deliberately do
+          # not require a product version bump.
+          if head_ref == "maintenance":
+              print("Maintenance scope is valid; no product version bump is required.")
+              raise SystemExit(0)
+
+          version_config = {
+              "tk": ("Cargo.toml", "cargo-workspace"),
+              "console": ("interfaces/terrakit-console/Cargo.toml", "cargo-package"),
+              "godot": (
+                  "interfaces/terrakit-godot/addon/addons/terrakit/plugin.cfg",
+                  "godot-plugin",
+              ),
+          }
+
+          version_path, version_kind = version_config[head_ref]
+
+          def git_file(commit: str, path: str) -> bytes:
+              return subprocess.check_output(["git", "show", f"{commit}:{path}"])
+
+          def normalize_version(value: str) -> str:
+              value = value.strip()
+              if (
+                  len(value) >= 2
+                  and value[0] == value[-1]
+                  and value[0] in {'"', "'"}
+              ):
+                  value = value[1:-1].strip()
+              return value
+
+          def read_version(data: bytes, kind: str) -> str:
+              text = data.decode()
 
               if kind == "cargo-workspace":
-                  return tomllib.loads(data.decode())["workspace"]["package"]["version"]
+                  return normalize_version(
+                      tomllib.loads(text)["workspace"]["package"]["version"]
+                  )
+
               if kind == "cargo-package":
-                  return tomllib.loads(data.decode())["package"]["version"]
+                  return normalize_version(tomllib.loads(text)["package"]["version"])
+
               if kind == "godot-plugin":
                   parser = configparser.ConfigParser(interpolation=None)
-                  parser.read_string(data.decode())
-                  return parser["plugin"]["version"]
+                  parser.read_string(text)
+                  return normalize_version(parser["plugin"]["version"])
+
               raise SystemExit(f"unknown version kind: {kind}")
 
-          def semver(value):
-              match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value)
+          def stable_semver(value: str):
+              value = normalize_version(value)
+              match = re.fullmatch(
+                  r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)",
+                  value,
+              )
               if not match:
-                  raise SystemExit(f"release versions must use stable X.Y.Z SemVer; got {value!r}")
+                  raise SystemExit(
+                      f"release versions must use stable X.Y.Z SemVer; got {value!r}"
+                  )
               return tuple(int(part) for part in match.groups())
 
-          base_version = read("/tmp/base-version-source")
-          head_version = read("/tmp/head-version-source")
+          base_version = read_version(git_file(base_sha, version_path), version_kind)
+          head_version = read_version(git_file(head_sha, version_path), version_kind)
 
           print(f"main version:      {base_version}")
           print(f"promotion version: {head_version}")
 
-          if semver(head_version) <= semver(base_version):
+          if stable_semver(head_version) <= stable_semver(base_version):
               raise SystemExit(
-                  f"promotion must increase its component version: {base_version} -> {head_version}"
+                  f"promotion must increase its component version: "
+                  f"{base_version} -> {head_version}"
               )
           PY
