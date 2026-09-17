@@ -16,27 +16,6 @@ TERRAKIT_INCLUDE_DIR = os.path.join(
     "include",
 )
 
-terrakit_profile = ARGUMENTS.get(
-    "terrakit_profile",
-    "debug",
-)
-
-if terrakit_profile not in (
-    "debug",
-    "release",
-):
-    print(
-        "terrakit_profile must be "
-        "'debug' or 'release'."
-    )
-    Exit(1)
-
-TERRAKIT_TARGET_DIR = os.path.join(
-    REPO_ROOT,
-    "target",
-    terrakit_profile,
-)
-
 ADDON_BIN_DIR = os.path.join(
     INTERFACE_DIR,
     "addon",
@@ -62,6 +41,25 @@ env = SConscript(
     {
         "api_version": "4.7",
     },
+)
+
+target = env["target"]
+
+if target == "template_debug":
+    terrakit_profile = "debug"
+elif target == "template_release":
+    terrakit_profile = "release"
+else:
+    print(
+        "Unsupported Godot build target:\n"
+        f"  {target}"
+    )
+    Exit(1)
+
+TERRAKIT_TARGET_DIR = os.path.join(
+    REPO_ROOT,
+    "target",
+    terrakit_profile,
 )
 
 env.Append(
