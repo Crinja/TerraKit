@@ -106,7 +106,6 @@ jobs:
           platform=${{ matrix.platform }}
           target=template_debug
           arch=x86_64
-          terrakit_profile=debug
           build_profile=build_profile.json
           optimize=none
           debug_symbols=no
