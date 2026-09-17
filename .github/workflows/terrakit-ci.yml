@@ -25,7 +25,7 @@ jobs:
     with:
       branch: tk
       scope_mode: exclude
-      scope_pattern: '^interfaces/'
+      scope_pattern: '^interfaces/|^\.github/(?!workflows/terrakit-.*\.ya?ml$)|^\.devcontainer/|^\.vscode/|^tools/release/|^docs/|^(README\.md|CONTRIBUTING\.md|SECURITY\.md|CODE_OF_CONDUCT\.md|LICENSE|\.gitignore|\.gitattributes|\.gitmodules|\.editorconfig|\.dockerignore|rust-toolchain\.toml)$'
 
   quality:
     name: Quality Gate
@@ -79,9 +79,9 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           PLATFORM_RESULT: ${{ needs.platform.result }}
         run: |
-          if [ "$SCOPE_RESULT" != "success" ] \
-            || [ "$QUALITY_RESULT" != "success" ] \
-            || [ "$PLATFORM_RESULT" != "success" ]; then
+          set -euo pipefail
+
+          if [ "$SCOPE_RESULT" != "success" ]             || [ "$QUALITY_RESULT" != "success" ]             || [ "$PLATFORM_RESULT" != "success" ]; then
             echo "::error::TerraKit CI failed."
             echo "Scope:    $SCOPE_RESULT"
             echo "Quality:  $QUALITY_RESULT"

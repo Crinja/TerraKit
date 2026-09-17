@@ -15,6 +15,6 @@ jobs:
       version_kind: godot-plugin
       tag_prefix: terrakit-godot-v
       scope_mode: include
-      scope_pattern: '^interfaces/terrakit-godot/'
+      scope_pattern: '^(interfaces/terrakit-godot/|\.github/workflows/godot-.*\.ya?ml$)'
     secrets:
       automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
