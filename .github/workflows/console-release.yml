@@ -1,0 +1,190 @@
+name: Console Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console-release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_TARGET_DIR: target/console
+
+jobs:
+  prepare:
+    name: Prepare Release
+    uses: ./.github/workflows/_release-state.yml
+    with:
+      version_path: interfaces/terrakit-console/Cargo.toml
+      version_kind: cargo-package
+      tag_prefix: terrakit-console-v
+
+  validate:
+    name: Validate Release
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path interfaces/terrakit-console/Cargo.toml --check
+
+      - name: Run Clippy
+        run: >-
+          cargo clippy
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --all-targets
+          --all-features
+          -- -D warnings
+
+      - name: Run tests
+        run: >-
+          cargo test
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --all-features
+
+      - name: Run integration demo
+        run: >-
+          cargo run
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+          -- mesh-demo
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Determine target triple
+        id: target
+        shell: bash
+        run: |
+          TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Build Console
+        run: >-
+          cargo build
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+
+      - name: Package Console
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/console
+          NAME="terrakit-console-${VERSION}-${TARGET}.tar.gz"
+          tar -C "$CARGO_TARGET_DIR/release" -czf "dist/console/$NAME" terrakit-console
+          HASH="$(shasum -a 256 "dist/console/$NAME" | awk '{print $1}')"
+          printf '%s  %s\n' "$HASH" "$NAME" > "dist/console/$NAME.sha256"
+
+      - name: Package Console
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          New-Item -ItemType Directory -Force "dist/console" | Out-Null
+          $name = "terrakit-console-$env:VERSION-$env:TARGET.zip"
+          $path = Join-Path "dist/console" $name
+          $binary = Join-Path $env:CARGO_TARGET_DIR "release/terrakit-console.exe"
+          Compress-Archive -Path $binary -DestinationPath $path
+          $hash = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Path "$path.sha256" -Encoding ascii
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrakit-console-${{ steps.target.outputs.target }}
+          path: dist/console/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish Release
+    needs: [prepare, validate, build]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: terrakit-console-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate scoped release notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          {
+            echo "TerraKit Console ${VERSION}"
+            echo
+            echo "## Console changes"
+            echo
+            if [ -n "$PREVIOUS_TAG" ]; then
+              CHANGES="$(git log --no-merges --pretty=format:'- %s (%h)' "$PREVIOUS_TAG..$GITHUB_SHA" -- interfaces/terrakit-console)"
+              if [ -n "$CHANGES" ]; then echo "$CHANGES"; else echo "- No Console-path changes recorded."; fi
+            else
+              echo "- Initial standalone Console release."
+            fi
+          } > release-notes.md
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create \
+            "$TAG" \
+            release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TerraKit Console $VERSION" \
+            --notes-file release-notes.md \
+            --latest=false

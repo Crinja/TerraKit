@@ -1,0 +1,17 @@
+name: TerraKit Sync
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '11 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    uses: ./.github/workflows/_component-sync.yml
+    with:
+      branch: tk
+      component: TerraKit
+    secrets:
+      automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}

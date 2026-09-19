@@ -1,14 +1,15 @@
+[workspace]
+
 [package]
 name = "terrakit-console"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-description.workspace = true
-readme.workspace = true
+version = "0.0.2"
+edition = "2024"
+rust-version = "1.87"
+publish = false
 
 [dependencies]
-terrakit-algorithms.workspace = true
-terrakit-builtins.workspace = true
-terrakit-core.workspace = true
-terrakit-pipeline.workspace = true
-terrakit-runtime.workspace = true
+terrakit-algorithms = { path = "../../generation/terrakit-algorithms" }
+terrakit-builtins = { path = "../../generation/terrakit-builtins" }
+terrakit-core = { path = "../../engine/terrakit-core" }
+terrakit-pipeline = { path = "../../engine/terrakit-pipeline" }
+terrakit-runtime = { path = "../../engine/terrakit-runtime" }

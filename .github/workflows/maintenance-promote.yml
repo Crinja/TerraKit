@@ -1,0 +1,158 @@
+name: Maintenance Promote
+
+on:
+  push:
+    branches: [maintenance]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote Maintenance To Main
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: maintenance
+
+      - name: Fetch main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+
+      - name: Require current main
+        id: ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "maintenance does not yet contain current main."
+            echo "Promotion will wait for main -> maintenance sync."
+          fi
+
+      - name: Check maintenance divergence
+        if: steps.ancestry.outputs.current == 'true'
+        id: state
+        shell: bash
+        env:
+          SCOPE_PATTERN: '^(?:\.github/(?!workflows/(?:terrakit|console|godot)-.*\.ya?ml$)|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.gitmodules$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)'
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
+
+          pattern_text = os.environ["SCOPE_PATTERN"]
+
+          try:
+              pattern = re.compile(pattern_text)
+          except re.error as error:
+              raise SystemExit(
+                  f"invalid maintenance scope regex "
+                  f"{pattern_text!r}: {error}"
+              )
+
+          changed = subprocess.check_output(
+              [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  "origin/main...HEAD",
+              ],
+              text=True,
+          ).splitlines()
+
+          print("Maintenance divergence:")
+          if changed:
+              for path in changed:
+                  print(f"  {path}")
+          else:
+              print("  <none>")
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              if not changed:
+                  output.write("promote=false\n")
+                  print("No maintenance changes to promote.")
+                  raise SystemExit(0)
+
+              forbidden = [
+                  path
+                  for path in changed
+                  if not pattern.search(path)
+              ]
+
+              if forbidden:
+                  print(
+                      "::error::maintenance contains changes "
+                      "outside its ownership boundary."
+                  )
+
+                  for path in forbidden:
+                      print(f"  {path}")
+
+                  raise SystemExit(1)
+
+              output.write("promote=true\n")
+              print("Maintenance changes are ready for promotion.")
+          PY
+
+      - name: Create or reuse promotion PR
+        if: >-
+          steps.ancestry.outputs.current == 'true' &&
+          steps.state.outputs.promote == 'true'
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(
+            gh pr list               --repo "$GITHUB_REPOSITORY"               --state open               --base main               --head maintenance               --json number               --jq '.[0].number // empty'
+          )"
+
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL="$(
+              gh pr create                 --repo "$GITHUB_REPOSITORY"                 --base main                 --head maintenance                 --title "Promote repository maintenance"                 --body "Automated promotion of validated shared repository infrastructure and maintenance changes into the canonical \`main\` branch."
+            )"
+
+            PR_NUMBER="${PR_URL##*/}"
+            echo "Created PR #$PR_NUMBER."
+          else
+            echo "Using existing promotion PR #$PR_NUMBER."
+          fi
+
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: >-
+          steps.ancestry.outputs.current == 'true' &&
+          steps.state.outputs.promote == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+
+          gh pr merge             "$PR_NUMBER"             --repo "$GITHUB_REPOSITORY"             --auto             --merge

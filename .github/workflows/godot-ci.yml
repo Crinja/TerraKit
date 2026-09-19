@@ -1,0 +1,161 @@
+name: Godot CI
+
+on:
+  pull_request:
+    branches: [godot, tk, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  scope:
+    name: Godot Scope
+    uses: ./.github/workflows/_component-scope.yml
+    with:
+      branch: godot
+      scope_mode: include
+      scope_pattern: '^(interfaces/terrakit-godot/|\.github/workflows/godot-.*\.ya?ml$)'
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: scope
+
+    # Do not rebuild Godot for:
+    # - main -> persistent-branch sync PRs; main has already been validated.
+    # - Console/Maintenance promotions into main; they cannot change Godot/core.
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (
+          github.head_ref != 'main' &&
+          !(
+            github.base_ref == 'main' &&
+            (
+              github.head_ref == 'console' ||
+              github.head_ref == 'maintenance'
+            )
+          )
+        )
+      }}
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/interfaces/terrakit-godot/.scons_cache
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install SCons
+        run: python -m pip install --disable-pip-version-check scons
+
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Read godot-cpp revision
+        id: godot-cpp
+        shell: bash
+        run: |
+          echo "sha=$(git -C interfaces/terrakit-godot/godot-cpp rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore godot-cpp build cache
+        uses: actions/cache@v4
+        with:
+          path: interfaces/terrakit-godot/.scons_cache
+          key: >-
+            terrakit-godot-scons-${{ runner.os }}-debug-o0-${{
+            steps.godot-cpp.outputs.sha }}-${{
+            hashFiles('interfaces/terrakit-godot/build_profile.json') }}
+          restore-keys: |
+            terrakit-godot-scons-${{ runner.os }}-debug-o0-${{ steps.godot-cpp.outputs.sha }}-
+
+      - name: Build TerraKit C ABI
+        run: cargo build -p terrakit-c-api
+
+      - name: Build Godot extension
+        working-directory: interfaces/terrakit-godot
+        run: >-
+          scons
+          platform=${{ matrix.platform }}
+          target=template_debug
+          arch=x86_64
+          build_profile=build_profile.json
+          optimize=none
+          debug_symbols=no
+
+  gate:
+    name: Godot Gate
+    if: always()
+    needs: [scope, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Godot CI result
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SCOPE_RESULT" != "success" ]; then
+            echo "::error::Godot scope validation failed."
+            exit 1
+          fi
+
+          if [ "$BUILD_RESULT" = "success" ]; then
+            exit 0
+          fi
+
+          # A skipped build is valid only for routes where the native Godot
+          # build is deliberately redundant.
+          if [ "$BUILD_RESULT" = "skipped" ] \
+            && [ "$EVENT_NAME" = "pull_request" ]; then
+
+            if [ "$HEAD_REF" = "main" ]; then
+              echo "Godot build skipped for main sync."
+              exit 0
+            fi
+
+            if [ "$BASE_REF" = "main" ] \
+              && { [ "$HEAD_REF" = "console" ] \
+                || [ "$HEAD_REF" = "maintenance" ]; }; then
+              echo "Godot build skipped for unrelated main promotion."
+              exit 0
+            fi
+          fi
+
+          echo "::error::Godot CI failed."
+          echo "Scope: $SCOPE_RESULT"
+          echo "Build: $BUILD_RESULT"
+          exit 1

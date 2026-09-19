@@ -1,0 +1,145 @@
+name: Reusable Component Scope
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      scope_mode:
+        required: true
+        type: string
+      scope_pattern:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    name: Scope Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Enforce component ownership
+        shell: bash
+        env:
+          COMPONENT_BRANCH: ${{ inputs.branch }}
+          SCOPE_MODE: ${{ inputs.scope_mode }}
+          SCOPE_PATTERN: ${{ inputs.scope_pattern }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # main -> component is the authorised upstream sync.
+          # Changes outside component ownership are expected because they
+          # already originated on main.
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && [ "$BASE_REF" = "$COMPONENT_BRANCH" ] \
+            && [ "$HEAD_REF" = "main" ]; then
+            echo "Authorised main -> $COMPONENT_BRANCH sync."
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "push" ] \
+            && [ "$GITHUB_REF_NAME" = "$COMPONENT_BRANCH" ]; then
+            git fetch origin main --no-tags
+          fi
+
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
+
+          component = os.environ["COMPONENT_BRANCH"]
+          mode = os.environ["SCOPE_MODE"]
+          pattern_text = os.environ["SCOPE_PATTERN"]
+          event = os.environ["EVENT_NAME"]
+          base_ref = os.environ["BASE_REF"]
+          head_ref = os.environ["HEAD_REF"]
+          base_sha = os.environ["BASE_SHA"]
+          head_sha = os.environ["HEAD_SHA"]
+
+          try:
+              pattern = re.compile(pattern_text)
+          except re.error as error:
+              raise SystemExit(
+                  f"invalid scope regex {pattern_text!r}: {error}"
+              )
+
+          if event == "pull_request" and base_ref == component:
+              comparison = f"{base_sha}...{head_sha}"
+
+          elif (
+              event == "pull_request"
+              and base_ref == "main"
+              and head_ref == component
+          ):
+              comparison = f"{base_sha}...{head_sha}"
+
+          elif (
+              event == "push"
+              and os.environ.get("GITHUB_REF_NAME") == component
+          ):
+              comparison = "origin/main...HEAD"
+
+          else:
+              print("No component-scope enforcement required for this event.")
+              raise SystemExit(0)
+
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", comparison],
+              text=True,
+          ).splitlines()
+
+          print("Changed component-owned divergence:")
+          if changed:
+              for path in changed:
+                  print(f"  {path}")
+          else:
+              print("  <none>")
+
+          if mode == "include":
+              forbidden = [
+                  path
+                  for path in changed
+                  if not pattern.search(path)
+              ]
+
+          elif mode == "exclude":
+              forbidden = [
+                  path
+                  for path in changed
+                  if pattern.search(path)
+              ]
+
+          else:
+              raise SystemExit(
+                  f"unknown scope mode {mode!r}; "
+                  "expected 'include' or 'exclude'"
+              )
+
+          if forbidden:
+              print(
+                  "::error::Branch contains changes outside "
+                  "its ownership boundary."
+              )
+              print("Forbidden paths:")
+
+              for path in forbidden:
+                  print(f"  {path}")
+
+              raise SystemExit(1)
+
+          print("Component ownership boundary satisfied.")
+          PY

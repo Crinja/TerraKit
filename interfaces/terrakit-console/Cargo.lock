@@ -16,13 +16,13 @@ dependencies = [
  "terrakit-algorithms",
  "terrakit-core",
  "terrakit-pipeline",
- "terrakit-runtime",
 ]
 
 [[package]]
-name = "terrakit-c-api"
-version = "0.0.2"
+name = "terrakit-console"
+version = "0.0.1"
 dependencies = [
+ "terrakit-algorithms",
  "terrakit-builtins",
  "terrakit-core",
  "terrakit-pipeline",
@@ -47,7 +47,3 @@ dependencies = [
  "terrakit-core",
  "terrakit-pipeline",
 ]
-
-[[package]]
-name = "terrakit-xtask"
-version = "0.0.2"

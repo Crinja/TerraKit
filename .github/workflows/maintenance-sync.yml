@@ -1,0 +1,26 @@
+name: Maintenance Sync
+
+on:
+  push:
+    branches: [main]
+
+  schedule:
+    - cron: "43 3 * * *"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    uses: ./.github/workflows/_component-sync.yml
+    with:
+      branch: maintenance
+      component: Repository Maintenance
+    secrets:
+      automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}

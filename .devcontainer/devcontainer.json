@@ -8,11 +8,7 @@
     "ghcr.io/devcontainers/features/dotnet:2": {
       "version": "8.0"
     },
-    "ghcr.io/devcontainers/features/java:1": {
-      "version": "21",
-      "installMaven": "false",
-      "installGradle": "false"
-    }
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
   "containerEnv": {
     "CARGO_TARGET_DIR": "/home/vscode/.cache/terrakit-target"
@@ -21,7 +17,10 @@
     "vscode": {
       "extensions": [
         "tamasfe.even-better-toml",
-        "ms-dotnettools.csharp"
+        "ms-dotnettools.csharp",
+        "GitHub.vscode-github-actions",
+        "redhat.vscode-yaml",
+        "fean-developer.act-visual-runner"
       ],
       "settings": {
         "editor.formatOnSave": true,
@@ -29,6 +28,6 @@
       }
     }
   },
-  "postCreateCommand": "rustup component add rustfmt clippy && cargo fetch",
+  "postCreateCommand": "cargo fetch",
   "remoteUser": "vscode"
 }

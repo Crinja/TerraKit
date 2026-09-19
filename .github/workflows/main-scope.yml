@@ -1,0 +1,305 @@
+name: Main Scope
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-scope-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    name: Main Scope Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce promotion ownership and version policy
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import configparser
+          import os
+          import re
+          import subprocess
+          import tomllib
+
+          base_sha = os.environ["BASE_SHA"]
+          head_sha = os.environ["HEAD_SHA"]
+          head_ref = os.environ["HEAD_REF"]
+
+          changed = subprocess.check_output(
+              [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  f"{base_sha}...{head_sha}",
+              ],
+              text=True,
+          ).splitlines()
+
+          print(f"Promotion branch: {head_ref}")
+          print("Changed files:")
+
+          for path in changed:
+              print(f"  {path}")
+
+          component_workflow = {
+              "tk": re.compile(
+                  r"^\.github/workflows/terrakit-.*\.ya?ml$"
+              ),
+              "console": re.compile(
+                  r"^\.github/workflows/console-.*\.ya?ml$"
+              ),
+              "godot": re.compile(
+                  r"^\.github/workflows/godot-.*\.ya?ml$"
+              ),
+          }
+
+          maintenance_exact = {
+              "README.md",
+              "CONTRIBUTING.md",
+              "SECURITY.md",
+              "CODE_OF_CONDUCT.md",
+              "LICENSE",
+              ".gitignore",
+              ".gitattributes",
+              ".gitmodules",
+              ".editorconfig",
+              ".dockerignore",
+              "rust-toolchain.toml",
+          }
+
+          def maintenance_non_github(path: str) -> bool:
+              return (
+                  path.startswith(".devcontainer/")
+                  or path.startswith(".vscode/")
+                  or path.startswith("tools/release/")
+                  or path.startswith("docs/")
+                  or path in maintenance_exact
+              )
+
+          def maintenance_github(path: str) -> bool:
+              if not path.startswith(".github/"):
+                  return False
+
+              # Component branches own their own named workflows.
+              # Everything else in .github is shared infrastructure.
+              return not any(
+                  pattern.match(path)
+                  for pattern in component_workflow.values()
+              )
+
+          def is_maintenance(path: str) -> bool:
+              return (
+                  maintenance_non_github(path)
+                  or maintenance_github(path)
+              )
+
+          def forbidden_paths(branch: str):
+              bad = []
+
+              for path in changed:
+                  if branch == "tk":
+                      if path.startswith("interfaces/"):
+                          bad.append(path)
+
+                      elif (
+                          path.startswith(".github/")
+                          and not component_workflow["tk"].match(path)
+                      ):
+                          bad.append(path)
+
+                      elif maintenance_non_github(path):
+                          bad.append(path)
+
+                  elif branch == "console":
+                      if not (
+                          path.startswith(
+                              "interfaces/terrakit-console/"
+                          )
+                          or component_workflow["console"].match(path)
+                      ):
+                          bad.append(path)
+
+                  elif branch == "godot":
+                      if not (
+                          path.startswith(
+                              "interfaces/terrakit-godot/"
+                          )
+                          or component_workflow["godot"].match(path)
+                      ):
+                          bad.append(path)
+
+                  elif branch == "maintenance":
+                      if not is_maintenance(path):
+                          bad.append(path)
+
+              return bad
+
+          accepted = {
+              "tk",
+              "console",
+              "godot",
+              "maintenance",
+          }
+
+          if head_ref not in accepted:
+              raise SystemExit(
+                  "main only accepts promotion PRs from "
+                  "tk, console, godot, or maintenance"
+              )
+
+          bad = forbidden_paths(head_ref)
+
+          if bad:
+              print(
+                  "::error::Promotion contains files outside "
+                  "the branch ownership boundary."
+              )
+
+              for path in bad:
+                  print(f"  {path}")
+
+              raise SystemExit(1)
+
+          # Maintenance is shared infrastructure and deliberately does not
+          # require a product version bump.
+          if head_ref == "maintenance":
+              print(
+                  "Maintenance scope is valid; "
+                  "no product version bump is required."
+              )
+              raise SystemExit(0)
+
+          version_config = {
+              "tk": (
+                  "Cargo.toml",
+                  "cargo-workspace",
+              ),
+              "console": (
+                  "interfaces/terrakit-console/Cargo.toml",
+                  "cargo-package",
+              ),
+              "godot": (
+                  "interfaces/terrakit-godot/"
+                  "addon/addons/terrakit/plugin.cfg",
+                  "godot-plugin",
+              ),
+          }
+
+          version_path, version_kind = version_config[head_ref]
+
+          def git_file(commit: str, path: str) -> bytes:
+              return subprocess.check_output(
+                  [
+                      "git",
+                      "show",
+                      f"{commit}:{path}",
+                  ]
+              )
+
+          def normalize_version(value) -> str:
+              value = str(value).strip()
+
+              while (
+                  len(value) >= 2
+                  and value[0] == value[-1]
+                  and value[0] in {'"', "'"}
+              ):
+                  value = value[1:-1].strip()
+
+              return value
+
+          def read_version(data: bytes, kind: str) -> str:
+              text = data.decode("utf-8")
+
+              if kind == "cargo-workspace":
+                  value = (
+                      tomllib.loads(text)
+                      ["workspace"]
+                      ["package"]
+                      ["version"]
+                  )
+
+              elif kind == "cargo-package":
+                  value = (
+                      tomllib.loads(text)
+                      ["package"]
+                      ["version"]
+                  )
+
+              elif kind == "godot-plugin":
+                  parser = configparser.ConfigParser(
+                      interpolation=None
+                  )
+                  parser.read_string(text)
+                  value = parser["plugin"]["version"]
+
+              else:
+                  raise SystemExit(
+                      f"unknown version kind: {kind!r}"
+                  )
+
+              return normalize_version(value)
+
+          def stable_semver(value: str):
+              value = normalize_version(value)
+
+              match = re.fullmatch(
+                  r"(0|[1-9][0-9]*)"
+                  r"\."
+                  r"(0|[1-9][0-9]*)"
+                  r"\."
+                  r"(0|[1-9][0-9]*)",
+                  value,
+              )
+
+              if not match:
+                  raise SystemExit(
+                      "release versions must use stable "
+                      f"X.Y.Z SemVer; got {value!r}"
+                  )
+
+              return tuple(
+                  int(part)
+                  for part in match.groups()
+              )
+
+          base_version = read_version(
+              git_file(base_sha, version_path),
+              version_kind,
+          )
+
+          head_version = read_version(
+              git_file(head_sha, version_path),
+              version_kind,
+          )
+
+          print(f"main version:      {base_version}")
+          print(f"promotion version: {head_version}")
+
+          if stable_semver(head_version) <= stable_semver(base_version):
+              raise SystemExit(
+                  "promotion must increase its component version: "
+                  f"{base_version} -> {head_version}"
+              )
+
+          print(
+              f"{head_ref} promotion version increase is valid: "
+              f"{base_version} -> {head_version}"
+          )
+          PY

@@ -1,0 +1,369 @@
+name: Reusable Component Promote
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+      branch:
+        required: true
+        type: string
+      version_path:
+        required: true
+        type: string
+      version_kind:
+        required: true
+        type: string
+      tag_prefix:
+        required: true
+        type: string
+      scope_mode:
+        required: true
+        type: string
+      scope_pattern:
+        required: true
+        type: string
+    secrets:
+      automation_token:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote Version To Main
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout component branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.branch }}
+
+      - name: Fetch main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+
+      - name: Require current main
+        id: ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            echo "Component branch contains current main."
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Component branch does not yet contain current main."
+            echo "Promotion will wait for the main -> component sync."
+          fi
+
+      - name: Verify component ownership
+        if: steps.ancestry.outputs.current == 'true'
+        shell: bash
+        env:
+          SCOPE_MODE: ${{ inputs.scope_mode }}
+          SCOPE_PATTERN: ${{ inputs.scope_pattern }}
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
+
+          mode = os.environ["SCOPE_MODE"]
+          pattern_text = os.environ["SCOPE_PATTERN"]
+
+          try:
+              pattern = re.compile(pattern_text)
+          except re.error as error:
+              raise SystemExit(
+                  f"invalid component scope regex {pattern_text!r}: {error}"
+              )
+
+          changed = subprocess.check_output(
+              [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  "origin/main...HEAD",
+              ],
+              text=True,
+          ).splitlines()
+
+          print("Component divergence:")
+          if changed:
+              for path in changed:
+                  print(f"  {path}")
+          else:
+              print("  <none>")
+
+          if mode == "include":
+              forbidden = [
+                  path
+                  for path in changed
+                  if not pattern.search(path)
+              ]
+
+          elif mode == "exclude":
+              forbidden = [
+                  path
+                  for path in changed
+                  if pattern.search(path)
+              ]
+
+          else:
+              raise SystemExit(
+                  f"unknown scope mode {mode!r}; "
+                  "expected 'include' or 'exclude'"
+              )
+
+          if forbidden:
+              print(
+                  "::error::Persistent branch contains changes "
+                  "outside its ownership boundary."
+              )
+              print("Forbidden paths:")
+
+              for path in forbidden:
+                  print(f"  {path}")
+
+              raise SystemExit(1)
+
+          print("Component ownership scope is valid.")
+          PY
+
+      - name: Compare component versions
+        if: steps.ancestry.outputs.current == 'true'
+        id: version
+        shell: bash
+        env:
+          VERSION_PATH: ${{ inputs.version_path }}
+          VERSION_KIND: ${{ inputs.version_kind }}
+          COMPONENT_NAME: ${{ inputs.component }}
+        run: |
+          set -euo pipefail
+
+          git show "origin/main:$VERSION_PATH" \
+            > /tmp/main-version-source
+
+          python3 <<'PY'
+          import configparser
+          import json
+          import os
+          import re
+          import tomllib
+
+          version_path = os.environ["VERSION_PATH"]
+          version_kind = os.environ["VERSION_KIND"]
+          component_name = os.environ["COMPONENT_NAME"]
+
+          def normalize_version(value) -> str:
+              value = str(value).strip()
+
+              while (
+                  len(value) >= 2
+                  and value[0] == value[-1]
+                  and value[0] in {'"', "'"}
+              ):
+                  value = value[1:-1].strip()
+
+              return value
+
+          def read_version(data: bytes, kind: str) -> str:
+              text = data.decode("utf-8")
+
+              if kind == "cargo-workspace":
+                  value = (
+                      tomllib.loads(text)
+                      ["workspace"]
+                      ["package"]
+                      ["version"]
+                  )
+
+              elif kind == "cargo-package":
+                  value = (
+                      tomllib.loads(text)
+                      ["package"]
+                      ["version"]
+                  )
+
+              elif kind == "godot-plugin":
+                  parser = configparser.ConfigParser(
+                      interpolation=None
+                  )
+                  parser.read_string(text)
+                  value = parser["plugin"]["version"]
+
+              elif kind == "json-package":
+                  value = json.loads(text)["version"]
+
+              elif kind == "plain":
+                  value = text
+
+              else:
+                  raise SystemExit(
+                      f"unknown version kind: {kind!r}"
+                  )
+
+              return normalize_version(value)
+
+          def stable_semver(value: str):
+              value = normalize_version(value)
+
+              match = re.fullmatch(
+                  r"(0|[1-9][0-9]*)"
+                  r"\."
+                  r"(0|[1-9][0-9]*)"
+                  r"\."
+                  r"(0|[1-9][0-9]*)",
+                  value,
+              )
+
+              if not match:
+                  raise SystemExit(
+                      "release versions must currently use stable "
+                      f"X.Y.Z SemVer; got {value!r}"
+                  )
+
+              return tuple(
+                  int(part)
+                  for part in match.groups()
+              )
+
+          with open(version_path, "rb") as handle:
+              component_version = read_version(
+                  handle.read(),
+                  version_kind,
+              )
+
+          with open(
+              "/tmp/main-version-source",
+              "rb",
+          ) as handle:
+              main_version = read_version(
+                  handle.read(),
+                  version_kind,
+              )
+
+          component_semver = stable_semver(component_version)
+          main_semver = stable_semver(main_version)
+
+          print(f"main version:      {main_version}")
+          print(f"component version: {component_version}")
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              output.write(
+                  f"version={component_version}\n"
+              )
+
+              if component_semver == main_semver:
+                  output.write("promote=false\n")
+                  print("Version unchanged; no promotion required.")
+
+              elif component_semver < main_semver:
+                  raise SystemExit(
+                      f"{component_name} version "
+                      f"{component_version} is older than "
+                      f"main version {main_version}"
+                  )
+
+              else:
+                  output.write("promote=true\n")
+                  print("Version increased; promotion required.")
+          PY
+
+      - name: Check release tag is unused
+        if: >-
+          steps.ancestry.outputs.current == 'true' &&
+          steps.version.outputs.promote == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+        run: |
+          set -euo pipefail
+
+          TAG="${TAG_PREFIX}${RELEASE_VERSION}"
+
+          echo "Expected release tag: $TAG"
+
+          if git ls-remote \
+            --exit-code \
+            --tags origin \
+            "refs/tags/$TAG" \
+            >/dev/null 2>&1
+          then
+            echo "::error::Release tag $TAG already exists."
+            exit 1
+          fi
+
+      - name: Create or reuse promotion PR
+        if: >-
+          steps.ancestry.outputs.current == 'true' &&
+          steps.version.outputs.promote == 'true'
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.automation_token }}
+          COMPONENT_BRANCH: ${{ inputs.branch }}
+          COMPONENT_NAME: ${{ inputs.component }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --base main \
+              --head "$COMPONENT_BRANCH" \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL="$(
+              gh pr create \
+                --repo "$GITHUB_REPOSITORY" \
+                --base main \
+                --head "$COMPONENT_BRANCH" \
+                --title "Release $COMPONENT_NAME $RELEASE_VERSION" \
+                --body "Automated promotion of **$COMPONENT_NAME $RELEASE_VERSION** into the canonical \`main\` branch."
+            )"
+
+            PR_NUMBER="${PR_URL##*/}"
+            echo "Created promotion PR #$PR_NUMBER."
+          else
+            echo "Using existing promotion PR #$PR_NUMBER."
+          fi
+
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: >-
+          steps.ancestry.outputs.current == 'true' &&
+          steps.version.outputs.promote == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.automation_token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+
+          gh pr merge \
+            "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --auto \
+            --merge

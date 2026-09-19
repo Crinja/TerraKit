@@ -1,0 +1,20 @@
+name: Console Promote
+
+on:
+  push:
+    branches: [console]
+  workflow_dispatch:
+
+jobs:
+  promote:
+    uses: ./.github/workflows/_component-promote.yml
+    with:
+      component: TerraKit Console
+      branch: console
+      version_path: interfaces/terrakit-console/Cargo.toml
+      version_kind: cargo-package
+      tag_prefix: terrakit-console-v
+      scope_mode: include
+      scope_pattern: '^(interfaces/terrakit-console/|\.github/workflows/console-.*\.ya?ml$)'
+    secrets:
+      automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}

@@ -8,5 +8,10 @@ RUN apt-get update \
         lld \
         make \
         pkg-config \
+        curl \
+        git \
+        ca-certificates \
+    && curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh \
+        | bash -s -- -b /usr/local/bin \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

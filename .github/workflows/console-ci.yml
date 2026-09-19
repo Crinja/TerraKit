@@ -1,0 +1,122 @@
+name: Console CI
+
+on:
+  push:
+    branches: [console]
+  pull_request:
+    branches: [console, tk, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_TARGET_DIR: target/console
+
+jobs:
+  scope:
+    name: Console Scope
+    uses: ./.github/workflows/_component-scope.yml
+    with:
+      branch: console
+      scope_mode: include
+      scope_pattern: '^(interfaces/terrakit-console/|\.github/workflows/console-.*\.ya?ml$)'
+
+  quality:
+    name: Quality Gate
+    needs: scope
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check formatting
+        run: >-
+          cargo fmt
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --check
+
+      - name: Run Clippy
+        run: >-
+          cargo clippy
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --all-targets
+          --all-features
+          -- -D warnings
+
+      - name: Run tests
+        run: >-
+          cargo test
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --all-features
+
+      - name: Run Console integration demo
+        run: >-
+          cargo run
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+          -- mesh-demo
+
+  platform:
+    name: Platform Smoke (${{ matrix.os }})
+    needs: scope
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build Console
+        run: >-
+          cargo build
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+
+      - name: Run Console integration demo
+        run: >-
+          cargo run
+          --manifest-path interfaces/terrakit-console/Cargo.toml
+          --release
+          -- mesh-demo
+
+  gate:
+    name: Console Gate
+    if: always()
+    needs: [scope, quality, platform]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Console CI result
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          PLATFORM_RESULT: ${{ needs.platform.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SCOPE_RESULT" != "success" ]             || [ "$QUALITY_RESULT" != "success" ]             || [ "$PLATFORM_RESULT" != "success" ]; then
+            echo "::error::Console CI failed."
+            echo "Scope:    $SCOPE_RESULT"
+            echo "Quality:  $QUALITY_RESULT"
+            echo "Platform: $PLATFORM_RESULT"
+            exit 1
+          fi

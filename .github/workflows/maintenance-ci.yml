@@ -1,0 +1,122 @@
+name: Maintenance CI
+
+on:
+  push:
+    branches: [maintenance]
+
+  pull_request:
+    branches:
+      - maintenance
+      - main
+
+  merge_group:
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    name: Maintenance Scope
+    uses: ./.github/workflows/_component-scope.yml
+    with:
+      branch: maintenance
+      scope_mode: include
+      scope_pattern: '^(?:\.github/(?!workflows/(?:terrakit|console|godot)-.*\.ya?ml$)|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.gitmodules$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)'
+
+  validate:
+    name: Validate Repository Infrastructure
+    needs: scope
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: Validate GitHub Actions workflows
+        run: actionlint
+
+      - name: Validate ruleset JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -d .github/rulesets ]; then
+            exit 0
+          fi
+
+          while IFS= read -r -d '' file; do
+            echo "Validating $file"
+            python3 -m json.tool "$file" >/dev/null
+          done < <(
+            find .github/rulesets               -type f               -name '*.json'               -print0
+          )
+
+      - name: Validate repository shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for root in .github/scripts tools/release; do
+            if [ ! -d "$root" ]; then
+              continue
+            fi
+
+            while IFS= read -r -d '' file; do
+              echo "Checking $file"
+              bash -n "$file"
+            done < <(
+              find "$root"                 -type f                 -name '*.sh'                 -print0
+            )
+          done
+
+      - name: Validate Rust toolchain file
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f rust-toolchain.toml ]; then
+            python3 - <<'PY'
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as handle:
+              tomllib.load(handle)
+
+          print("rust-toolchain.toml is valid TOML")
+          PY
+          fi
+
+  gate:
+    name: Maintenance Gate
+    if: always()
+    needs:
+      - scope
+      - validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Maintenance CI result
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SCOPE_RESULT" != "success" ]             || [ "$VALIDATE_RESULT" != "success" ]; then
+            echo "::error::Maintenance CI failed."
+            echo "Scope:    $SCOPE_RESULT"
+            echo "Validate: $VALIDATE_RESULT"
+            exit 1
+          fi
