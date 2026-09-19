@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_mesh_demo() -> Result<(), Box<dyn std::error::Error>> {
     let layout = RegionLayout2::new(Extent2::try_new(48, 48)?, Vector2F64::new(1.0, 1.0))?;
-    let seed = GenerationSeed::new(1234);
+    let seed = GenerationSeed::new(12345);
     let lod = LodLevel::HIGHEST;
     let output_dir = PathBuf::from("build").join("demo");
     fs::create_dir_all(&output_dir)?;
