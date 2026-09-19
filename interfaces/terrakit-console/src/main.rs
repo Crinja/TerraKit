@@ -12,7 +12,6 @@ use std::{env, fs, path::PathBuf};
 use terrakit_builtins::{
     FlatHeightDefinition, HeightFieldMeshDefinition, NoiseHeightDefinition, builtin_stage_registry,
 };
-use terrakit_builtins::definition::AmplifyHeightDefinition;
 use terrakit_core::{
     Extent2, GenerationSeed, HeightField, LodLevel, RegionCoord2, RegionLayout2, TerrainMesh,
     Vector2F64, Vector3F64,
@@ -27,9 +26,6 @@ const POSITION_EPSILON: f64 = 1.0e-5;
 const BASE_HEIGHT: ResourceKey = ResourceKey(100);
 const NOISY_HEIGHT: ResourceKey = ResourceKey(101);
 const TERRAIN_MESH: ResourceKey = ResourceKey(102);
-const AMPLIFIED_HEIGHT_ONE: ResourceKey = ResourceKey(103);
-const AMPLIFIED_HEIGHT_TWO: ResourceKey = ResourceKey(104);
-const AMPLIFIED_HEIGHT_THREE: ResourceKey = ResourceKey(105);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match env::args().nth(1).as_deref() {
@@ -147,78 +143,15 @@ fn build_demo_runtime(layout: RegionLayout2) -> Result<TerrainRuntime, Box<dyn s
         ),
     )?;
 
-    let mut amplify_parameters = ParameterSet::new();
-    amplify_parameters.set(parameter_id("amplify_mode")?, ParameterValue::Enum(enum_value_id("multiply")?));
-    amplify_parameters.set(parameter_id("threshold")?, ParameterValue::F32(0.10));
-    amplify_parameters.set(parameter_id("threshold_direction")?, ParameterValue::Bool(false));
-    amplify_parameters.set(parameter_id("amplify_direction")?, ParameterValue::Bool(false));
-    amplify_parameters.set(parameter_id("amplify_value")?, ParameterValue::F32(5.0));
-    amplify_parameters.set(parameter_id("amplify_limit")?, ParameterValue::F32(1000.0));
     assembler.add_stage(
         StageConstruction::new(
             StageId(3),
-            stage_type_id(AmplifyHeightDefinition::TYPE_ID)?,
-            AmplifyHeightDefinition::SCHEMA_VERSION,
-        ).with_parameters(
-            amplify_parameters
-        ).with_bindings(
-            terrakit_pipeline::StageBindings::new()
-                .with_input(port_id("source")?, NOISY_HEIGHT)?
-                .with_output(port_id("out_height")?, AMPLIFIED_HEIGHT_ONE)?,
-        ),
-    )?;
-
-    amplify_parameters = ParameterSet::new();
-    amplify_parameters.set(parameter_id("amplify_mode")?, ParameterValue::Enum(enum_value_id("multiply")?));
-    amplify_parameters.set(parameter_id("threshold")?, ParameterValue::F32(1.0));
-    amplify_parameters.set(parameter_id("threshold_direction")?, ParameterValue::Bool(false));
-    amplify_parameters.set(parameter_id("amplify_direction")?, ParameterValue::Bool(false));
-    amplify_parameters.set(parameter_id("amplify_value")?, ParameterValue::F32(3.0));
-    amplify_parameters.set(parameter_id("amplify_limit")?, ParameterValue::F32(1000.0));
-    assembler.add_stage(
-        StageConstruction::new(
-            StageId(4),
-            stage_type_id(AmplifyHeightDefinition::TYPE_ID)?,
-            AmplifyHeightDefinition::SCHEMA_VERSION,
-        ).with_parameters(
-            amplify_parameters
-        ).with_bindings(
-            terrakit_pipeline::StageBindings::new()
-                .with_input(port_id("source")?, AMPLIFIED_HEIGHT_ONE)?
-                .with_output(port_id("out_height")?, AMPLIFIED_HEIGHT_TWO)?,
-        ),
-    )?;
-
-    amplify_parameters = ParameterSet::new();
-    amplify_parameters.set(parameter_id("amplify_mode")?, ParameterValue::Enum(enum_value_id("add")?));
-    amplify_parameters.set(parameter_id("threshold")?, ParameterValue::F32(-0.2));
-    amplify_parameters.set(parameter_id("threshold_direction")?, ParameterValue::Bool(true));
-    amplify_parameters.set(parameter_id("amplify_direction")?, ParameterValue::Bool(true));
-    amplify_parameters.set(parameter_id("amplify_value")?, ParameterValue::F32(2.0));
-    amplify_parameters.set(parameter_id("amplify_limit")?, ParameterValue::F32(-10.0));
-    assembler.add_stage(
-        StageConstruction::new(
-            StageId(5),
-            stage_type_id(AmplifyHeightDefinition::TYPE_ID)?,
-            AmplifyHeightDefinition::SCHEMA_VERSION,
-        ).with_parameters(
-            amplify_parameters
-        ).with_bindings(
-            terrakit_pipeline::StageBindings::new()
-                .with_input(port_id("source")?, AMPLIFIED_HEIGHT_TWO)?
-                .with_output(port_id("out_height")?, AMPLIFIED_HEIGHT_THREE)?,
-        ),
-    )?;
-
-    assembler.add_stage(
-        StageConstruction::new(
-            StageId(6),
             stage_type_id(HeightFieldMeshDefinition::TYPE_ID)?,
             HeightFieldMeshDefinition::SCHEMA_VERSION,
         )
         .with_bindings(
             terrakit_pipeline::StageBindings::new()
-                .with_input(port_id("height")?, AMPLIFIED_HEIGHT_THREE)?
+                .with_input(port_id("height")?, NOISY_HEIGHT)?
                 .with_output(port_id("mesh")?, TERRAIN_MESH)?,
         ),
     )?;
