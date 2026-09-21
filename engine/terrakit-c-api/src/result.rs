@@ -1,7 +1,7 @@
 //! Generation result metadata and immutable zero-copy resource views.
 
 use terrakit_core::{
-    DensityField, HeightField, RegionDescriptor2, RegionDescriptor3, TerrainMesh, VoxelVolume,
+    DensityField, HeightField, RegionDescriptor2, RegionDescriptor3, ScatterPoints, TerrainMesh, VoxelVolume,
 };
 use terrakit_pipeline::{ResourceKey, ResourceSet};
 
