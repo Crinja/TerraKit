@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use terrakit_core::{DensityField, HeightField, TerrainMesh, TerrainResource, VoxelVolume};
+use terrakit_core::{DensityField, HeightField, ScatterPoints, TerrainMesh, TerrainResource, VoxelVolume};
 
 /// Stable identifier for a resource within one pipeline execution.
 #[repr(transparent)]
@@ -24,6 +24,9 @@ impl ResourceKey {
 
     /// Conventional key for the primary mesh.
     pub const MESH: Self = Self(4);
+
+    /// Conventional key for primary scatter points.
+    pub const SCATTER_POINTS: Self = Self(5);
 }
 
 /// Pipeline-level classification for canonical terrain resources.
@@ -40,6 +43,9 @@ pub enum ResourceKind {
 
     /// A `terrakit_core::TerrainMesh`.
     Mesh,
+
+    /// A 'terrakit_core::ScatterPoints'
+    ScatterPoints,
 }
 
 /// Returns the pipeline resource kind for a canonical TerraKit resource.
@@ -49,6 +55,7 @@ pub fn resource_kind(resource: &TerrainResource) -> ResourceKind {
         TerrainResource::DensityField(_) => ResourceKind::DensityField,
         TerrainResource::VoxelVolume(_) => ResourceKind::VoxelVolume,
         TerrainResource::Mesh(_) => ResourceKind::Mesh,
+        TerrainResource::ScatterPoints(_) => ResourceKind::ScatterPoints,
     }
 }
 
@@ -168,6 +175,20 @@ impl ResourceSet {
     pub fn mesh_mut(&mut self, key: ResourceKey) -> Option<&mut TerrainMesh> {
         match self.resources.get_mut(&key) {
             Some(TerrainResource::Mesh(resource)) => Some(resource),
+            _ => None,
+        }
+    }
+
+    pub fn scatter_points(&self, key: ResourceKey) -> Option<&ScatterPoints> {
+        match self.resources.get(&key) {
+            Some(TerrainResource::ScatterPoints(resource)) => Some(resource),
+            _ => None,
+        }
+    }
+
+    pub fn scatter_points_mut(&mut self, key: ResourceKey) -> Option<&mut ScatterPoints> {
+        match self.resources.get_mut(&key) {
+            Some(TerrainResource::ScatterPoints(resource)) => Some(resource),
             _ => None,
         }
     }
