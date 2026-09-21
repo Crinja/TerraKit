@@ -13,7 +13,7 @@ use crate::{
     TK_PARAMETER_KIND_I64, TK_PARAMETER_KIND_STRING, TK_PARAMETER_KIND_U64,
     TK_PARAMETER_KIND_VECTOR2_F64, TK_PARAMETER_KIND_VECTOR3_F64, TK_REGION_KIND_REGION_2,
     TK_REGION_KIND_REGION_3, TK_RESOURCE_KIND_DENSITY_FIELD, TK_RESOURCE_KIND_HEIGHT_FIELD,
-    TK_RESOURCE_KIND_MESH, TK_RESOURCE_KIND_VOXEL_VOLUME, TK_SAMPLING_DOMAIN_CELLS,
+    TK_RESOURCE_KIND_SCATTER_POINTS, TK_RESOURCE_KIND_MESH, TK_RESOURCE_KIND_VOXEL_VOLUME, TK_SAMPLING_DOMAIN_CELLS,
     TK_SAMPLING_DOMAIN_POINTS, TkBool, TkParameterKind, TkRegionKind, TkResourceKind,
     TkSamplingDomain,
 };
@@ -526,6 +526,39 @@ impl Default for TkHeightFieldView {
     }
 }
 
+/// One engine-independent object placement point.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TkScatterPoint {
+    /// World-space position (x,y,z)
+    pub position: [f32; 3],
+    /// Quaternion rotation (x,y,z,w)
+    pub rotation: [f32; 4],
+    /// X,Y,Z scales
+    pub scale: [f32; 3],
+    /// Identifier of the object prototype to instantiate.
+    pub prototype_id: u32,
+}
+
+/// Borrowed immutable scatter-point view.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct TkScatterPointsView {
+    /// Borrowed contiguous scatter-point pointer.
+    pub points: *const TkScatterPoint,
+    /// Number of scatter points.
+    pub point_count: usize,
+}
+
+impl Default for TkScatterPointsView {
+    fn default() -> Self {
+        Self {
+            points: std::ptr::null(),
+            point_count: 0,
+        }
+    }
+}
+
 /// Borrowed immutable density-field view.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -652,6 +685,7 @@ pub(crate) fn resource_kind_to_tk(kind: ResourceKind) -> TkResourceKind {
         ResourceKind::DensityField => TK_RESOURCE_KIND_DENSITY_FIELD,
         ResourceKind::VoxelVolume => TK_RESOURCE_KIND_VOXEL_VOLUME,
         ResourceKind::Mesh => TK_RESOURCE_KIND_MESH,
+        ResourceKind::ScatterPoints => TK_RESOURCE_KIND_SCATTER_POINTS,
     }
 }
 
