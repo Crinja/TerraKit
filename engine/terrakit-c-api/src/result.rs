@@ -12,7 +12,7 @@ use crate::{
     runtime::{GenerationResultHandle, result_handle},
     types::{
         TkDensityFieldView, TkGenerationResult, TkGridTransform2, TkHeightFieldView, TkRegion2Info,
-        TkRegion3Info, TkTerrainMeshView, TkVec2F64, TkVoxelVolumeView, region_kind_to_tk,
+        TkRegion3Info, TkScatterPointsView, TkTerrainMeshView, TkVec2F64, TkVoxelVolumeView, region_kind_to_tk,
         resource_kind_to_tk, sampling_domain_to_tk,
     },
 };
@@ -145,6 +145,37 @@ pub extern "C" fn tk_generation_result_get_height_field(
     })
 }
 
+/// Returns a borrowed immutable scatter-point view for a generated resource.
+#[unsafe(no_mangle)]
+pub extern "C" fn tk_generation_result_get_scatter_points(
+    result: *const TkGenerationResult,
+    resource_key: u64,
+    out_view: *mut TkScatterPointsView,
+) -> TkStatus {
+    ffi_guard(|| {
+        let result = result_handle(result)?;
+        let key = ResourceKey(resource_key);
+
+        let points = result
+            .result
+            .resources()
+            .scatter_points(key)
+            .ok_or_else(|| {
+                missing_or_wrong_kind(
+                    result.result.resources(),
+                    key,
+                    "scatter points",
+                )
+            })?;
+
+        let out = out_ref(out_view, "out_view")?;
+
+        *out = scatter_points_view(points);
+
+        Ok(())
+    })
+}
+
 /// Returns a borrowed immutable density-field view for a generated resource.
 #[unsafe(no_mangle)]
 pub extern "C" fn tk_generation_result_get_density_field(
@@ -263,6 +294,13 @@ fn height_field_view(field: &HeightField) -> TkHeightFieldView {
         height_axis: field.height_axis().into(),
         values: slice_pointer(field.values()),
         value_count: field.len(),
+    }
+}
+
+fn scatter_points_view(points: &ScatterPoints) -> TkScatterPointsView {
+    TkScatterPointsView {
+        points: slice_pointer(points.points()).cast(),
+        point_count: points.len(),
     }
 }
 
