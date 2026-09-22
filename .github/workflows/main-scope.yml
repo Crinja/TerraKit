@@ -32,6 +32,7 @@ jobs:
 
           python3 <<'PY'
           import configparser
+          import json
           import os
           import re
           import subprocess
@@ -66,6 +67,9 @@ jobs:
               ),
               "godot": re.compile(
                   r"^\.github/workflows/godot-.*\.ya?ml$"
+              ),
+              "unity": re.compile(
+                  r"^\.github/workflows/unity-.*\.ya?ml$"
               ),
           }
 
@@ -144,6 +148,15 @@ jobs:
                       ):
                           bad.append(path)
 
+                  elif branch == "unity":
+                      if not (
+                          path.startswith(
+                              "interfaces/terrakit-unity/"
+                          )
+                          or component_workflow["unity"].match(path)
+                      ):
+                          bad.append(path)
+
                   elif branch == "maintenance":
                       if not is_maintenance(path):
                           bad.append(path)
@@ -154,13 +167,14 @@ jobs:
               "tk",
               "console",
               "godot",
+              "unity",
               "maintenance",
           }
 
           if head_ref not in accepted:
               raise SystemExit(
                   "main only accepts promotion PRs from "
-                  "tk, console, godot, or maintenance"
+                  "tk, console, godot, unity, or maintenance"
               )
 
           bad = forbidden_paths(head_ref)
@@ -198,6 +212,10 @@ jobs:
                   "interfaces/terrakit-godot/"
                   "addon/addons/terrakit/plugin.cfg",
                   "godot-plugin",
+              ),
+              "unity": (
+                  "interfaces/terrakit-unity/package.json",
+                  "json-package",
               ),
           }
 
@@ -248,6 +266,9 @@ jobs:
                   )
                   parser.read_string(text)
                   value = parser["plugin"]["version"]
+
+              elif kind == "json-package":
+                  value = json.loads(text)["version"]
 
               else:
                   raise SystemExit(
