@@ -59,6 +59,16 @@ jobs:
               ;;
 
             # ==========================================================
+            # Unity development
+            #
+            # <type>/unity/<description>
+            # ==========================================================
+
+            feature/unity/*|fix/unity/*|refactor/unity/*|chore/unity/*|version/unity/*)
+              EXPECTED_BASE="unity"
+              ;;
+
+            # ==========================================================
             # Repository maintenance
             #
             # Maintenance is not a versioned product, so it does not
@@ -75,7 +85,7 @@ jobs:
             # Persistent branches may only promote into main.
             # ==========================================================
 
-            tk|console|godot|maintenance)
+            tk|console|godot|unity|maintenance)
               EXPECTED_BASE="main"
               ;;
 
@@ -87,7 +97,7 @@ jobs:
 
             main)
               case "$BASE_REF" in
-                tk|console|godot|maintenance)
+                tk|console|godot|unity|maintenance)
                   echo "Valid sync route: main -> $BASE_REF"
                   exit 0
                   ;;
@@ -99,6 +109,7 @@ jobs:
                   echo "  main -> tk"
                   echo "  main -> console"
                   echo "  main -> godot"
+                  echo "  main -> unity"
                   echo "  main -> maintenance"
                   exit 1
                   ;;
@@ -124,6 +135,7 @@ jobs:
               echo "  tk"
               echo "  console"
               echo "  godot"
+              echo "  unity"
               echo
               echo "Maintenance branches:"
               echo "  feature/maintenance/<name>"
@@ -135,6 +147,7 @@ jobs:
               echo "  feature/tk/plugin-system"
               echo "  fix/console/windows-paths"
               echo "  refactor/godot/native-loader"
+              echo "  feature/unity/package-release"
               echo "  chore/godot/ci-cache"
               echo "  version/godot/0.2.0"
               echo "  chore/maintenance/update-actions"
