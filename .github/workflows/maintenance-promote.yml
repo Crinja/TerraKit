@@ -49,7 +49,7 @@ jobs:
         id: state
         shell: bash
         env:
-          SCOPE_PATTERN: '^(?:\.github/(?!workflows/(?:terrakit|console|godot)-.*\.ya?ml$)|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.gitmodules$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)'
+          SCOPE_PATTERN: '^(?:\.github/(?!workflows/(?:terrakit|console|godot|unity)-.*\.ya?ml$)|\.devcontainer/|\.vscode/|tools/release/|docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CODE_OF_CONDUCT\.md$|LICENSE$|\.gitignore$|\.gitattributes$|\.gitmodules$|\.editorconfig$|\.dockerignore$|rust-toolchain\.toml$)'
         run: |
           set -euo pipefail
 
