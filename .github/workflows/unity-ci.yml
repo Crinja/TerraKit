@@ -79,17 +79,6 @@ jobs:
             exit 1
           fi
 
-          for path in \
-            "$ROOT/Runtime/Plugins/Windows/x86_64/README.md" \
-            "$ROOT/Runtime/Plugins/Linux/x86_64/README.md" \
-            "$ROOT/Runtime/Plugins/macOS/README.md"
-          do
-            if [ ! -f "$path" ]; then
-              echo "::error::Missing required Unity package path marker: $path"
-              exit 1
-            fi
-          done
-
           echo "TerraKit Unity source package is valid ($VERSION)."
 
   build:
@@ -141,22 +130,46 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Add Rust target
-        if: runner.os != 'macOS'
+      - name: Add Rust target (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add $env:TARGET
+
+      - name: Add Rust target (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
 
-      - name: Build TerraKit C ABI
-        if: runner.os != 'macOS'
+      - name: Build TerraKit C ABI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --locked -p terrakit-c-api --all-features --release --target $env:TARGET
+
+      - name: Build TerraKit C ABI (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --locked -p terrakit-c-api --all-features --release --target "$TARGET"
 
-      - name: Collect native runtime
-        if: runner.os != 'macOS'
+      - name: Collect native runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          New-Item -ItemType Directory -Force -Path native-out | Out-Null
+          Copy-Item "$env:CARGO_TARGET_DIR/$env:TARGET/release/$env:BINARY" "native-out/$env:BINARY"
+
+      - name: Collect native runtime (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
@@ -225,6 +238,36 @@ jobs:
           mkdir -p package dist
           cp -a interfaces/terrakit-unity/. package/
           rm -f package/.gitignore
+
+          # Runtime/Plugins is generated entirely by CI. Do not rely on
+          # placeholder files or pre-existing directories in the source tree.
+          rm -rf package/Runtime/Plugins package/Runtime/Plugins.meta
+          mkdir -p \
+            package/Runtime/Plugins/Windows/x86_64 \
+            package/Runtime/Plugins/Linux/x86_64 \
+            package/Runtime/Plugins/macOS
+
+          write_folder_meta() {
+            local path="$1"
+            local guid="$2"
+            cat > "$path" <<EOF
+          fileFormatVersion: 2
+          guid: $guid
+          folderAsset: yes
+          DefaultImporter:
+            externalObjects: {}
+            userData:
+            assetBundleName:
+            assetBundleVariant:
+          EOF
+          }
+
+          write_folder_meta package/Runtime/Plugins.meta 8fa1d5e50bf63e34e9f3e8c5f211003a
+          write_folder_meta package/Runtime/Plugins/Windows.meta 1bab37f4e3fb53245893b5320a62a1f8
+          write_folder_meta package/Runtime/Plugins/Windows/x86_64.meta d7a2e663645949e38d4ddae1c530ae7d
+          write_folder_meta package/Runtime/Plugins/Linux.meta 86a84bd15b444382b8b76a6fc437f81f
+          write_folder_meta package/Runtime/Plugins/Linux/x86_64.meta f8c38e64cf3a4eaa8577561fa990f949
+          write_folder_meta package/Runtime/Plugins/macOS.meta 69afc309a691444b885663031c01b1fb
 
           install -Dm755 native/windows/terrakit.dll \
             package/Runtime/Plugins/Windows/x86_64/terrakit.dll
