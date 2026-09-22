@@ -13,5 +13,12 @@
   ],
   "author": {
     "name": "TerraKit"
-  }
+  },
+  "samples": [
+    {
+      "displayName": "Runtime World Demo",
+      "description": "Registry-driven runtime pipeline editor with streamed TerraKit regions and Stationary, Orbiting, Explore, and Free Move camera modes.",
+      "path": "Samples~/Runtime World Demo"
+    }
+  ]
 }
