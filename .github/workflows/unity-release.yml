@@ -114,22 +114,46 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Add Rust target
-        if: runner.os != 'macOS'
+      - name: Add Rust target (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add $env:TARGET
+
+      - name: Add Rust target (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
 
-      - name: Build TerraKit release C ABI
-        if: runner.os != 'macOS'
+      - name: Build TerraKit release C ABI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --locked -p terrakit-c-api --all-features --release --target $env:TARGET
+
+      - name: Build TerraKit release C ABI (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --locked -p terrakit-c-api --all-features --release --target "$TARGET"
 
-      - name: Collect native runtime
-        if: runner.os != 'macOS'
+      - name: Collect native runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          New-Item -ItemType Directory -Force -Path native-out | Out-Null
+          Copy-Item "$env:CARGO_TARGET_DIR/$env:TARGET/release/$env:BINARY" "native-out/$env:BINARY"
+
+      - name: Collect native runtime (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
