@@ -1,0 +1,20 @@
+name: Unity Promote
+
+on:
+  push:
+    branches: [unity]
+  workflow_dispatch:
+
+jobs:
+  promote:
+    uses: ./.github/workflows/_component-promote.yml
+    with:
+      component: TerraKit Unity
+      branch: unity
+      version_path: interfaces/terrakit-unity/package.json
+      version_kind: json-package
+      tag_prefix: terrakit-unity-v
+      scope_mode: include
+      scope_pattern: '^(interfaces/terrakit-unity/|\.github/workflows/unity-.*\.ya?ml$)'
+    secrets:
+      automation_token: ${{ secrets.TERRAKIT_AUTOMATION_TOKEN }}
