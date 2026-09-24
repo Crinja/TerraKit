@@ -3,12 +3,10 @@
 //! Capabilities are named, versioned interpretation whose exposed view satisifies a schema.
 //! A resource may advertise any amount of capabilities
 
-use std::collections::{btree_map::Entry, BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, btree_map::Entry};
 use std::fmt;
 
-use super::{
-    MetadataRequirement, ResourceCapabilityId, ResourceView, Schema,
-};
+use super::{MetadataRequirement, ResourceCapabilityId, ResourceView, Schema};
 
 /// Definition of one reusable resource capability
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +82,10 @@ impl CapabilityBinding {
 
     /// Binds a capability to one nested resource view.
     pub fn view(capability: ResourceCapabilityId, view: ResourceView) -> Self {
-        Self { capability, view }
+        Self {
+            capability,
+            view: view.canonical(),
+        }
     }
 
     /// Returns the claimed capability ID.
@@ -131,33 +132,23 @@ impl CapabilityRegistry {
             }
 
             Entry::Occupied(entry) => {
-                Err(CapabilityError::DuplicateCapability(
-                    entry.key().clone(),
-                ))
+                Err(CapabilityError::DuplicateCapability(entry.key().clone()))
             }
         }
     }
 
     /// Return a capability definition by ID.
-    pub fn get(
-        &self,
-        id: &ResourceCapabilityId,
-    ) -> Option<&ResourceCapabilityDefinition> {
+    pub fn get(&self, id: &ResourceCapabilityId) -> Option<&ResourceCapabilityDefinition> {
         self.definitions.get(id)
     }
 
     /// Return whether a capability is registered.
-    pub fn contains(
-        &self,
-        id: &ResourceCapabilityId,
-    ) -> bool {
+    pub fn contains(&self, id: &ResourceCapabilityId) -> bool {
         self.definitions.contains_key(id)
     }
 
     /// Iterate over all registered capability definitions.
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<Item = &ResourceCapabilityDefinition> {
+    pub fn iter(&self) -> impl Iterator<Item = &ResourceCapabilityDefinition> {
         self.definitions.values()
     }
 
@@ -191,7 +182,10 @@ impl fmt::Display for CapabilityError {
             Self::InvalidSchema(message) => write!(f, "invalid capability schema: {message}"),
             Self::DuplicateCapability(id) => write!(f, "capability '{id}' is already registered"),
             Self::EmptyMetadataKey => write!(f, "capability metadata key cannot be empty"),
-            Self::DuplicateMetadataRequirement(key) => write!(f, "capability metadata requirement '{key}' is declared more than once"),
+            Self::DuplicateMetadataRequirement(key) => write!(
+                f,
+                "capability metadata requirement '{key}' is declared more than once"
+            ),
         }
     }
 }

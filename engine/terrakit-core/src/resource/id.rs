@@ -96,7 +96,9 @@ impl std::error::Error for IdError {}
 
 impl fmt::Debug for ResourceTypeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ResourceTypeId").field(&self.as_str()).finish()
+        f.debug_tuple("ResourceTypeId")
+            .field(&self.as_str())
+            .finish()
     }
 }
 

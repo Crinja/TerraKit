@@ -295,9 +295,7 @@ impl Schema {
 
         for field in &fields {
             if !names.insert(field.name()) {
-                return Err(SchemaError::DuplicateFieldName(
-                    field.name().into(),
-                ));
+                return Err(SchemaError::DuplicateFieldName(field.name().into()));
             }
         }
 
@@ -316,9 +314,7 @@ impl Schema {
 
         for variant in &variants {
             if !names.insert(variant.name()) {
-                return Err(SchemaError::DuplicateVariantName(
-                    variant.name().into(),
-                ));
+                return Err(SchemaError::DuplicateVariantName(variant.name().into()));
             }
         }
 
