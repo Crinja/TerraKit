@@ -7,8 +7,8 @@ use std::collections::{btree_map::Entry, BTreeMap, HashSet};
 use std::fmt;
 
 use super::{
-    CapabilityBinding, CapabilityRegistry, ResourceCapabilityId, ResourceTypeId,
-    Schema,
+    CapabilityBinding, CapabilityRegistry, MetadataKind, MetadataRequirement,
+    MetadataValidationError, ResourceCapabilityId, ResourceMetadata, ResourceTypeId, Schema,
 };
 
 /// Complete structural contract for one resource representation.
@@ -17,6 +17,7 @@ pub struct ResourceTypeDefinition {
     id: ResourceTypeId,
     schema: Schema,
     capabilities: Vec<CapabilityBinding>,
+    metadata: Vec<MetadataRequirement>,
 }
 
 impl ResourceTypeDefinition {
@@ -32,6 +33,7 @@ impl ResourceTypeDefinition {
             .map_err(|error| ResourceTypeError::InvalidSchema(error.to_string().into()))?;
 
         let mut seen = HashSet::with_capacity(capabilities.len());
+        let mut metadata = BTreeMap::<Box<str>, MetadataRequirement>::new();
 
         for binding in &capabilities {
             if !seen.insert(binding.capability().clone()) {
@@ -59,12 +61,39 @@ impl ResourceTypeDefinition {
                     actual: actual.clone(),
                 });
             }
+
+            for requirement in definition.metadata_requirements() {
+                match metadata.entry(requirement.key().into()) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(requirement.clone());
+                    }
+                    Entry::Occupied(mut entry) => {
+                        let existing = entry.get();
+            
+                        if existing.kind() != requirement.kind() {
+                            return Err(ResourceTypeError::ConflictingMetadataRequirement {
+                                key: requirement.key().into(),
+                                existing: existing.kind(),
+                                incoming: requirement.kind(),
+                            });
+                        }
+            
+                        if requirement.is_required() && !existing.is_required() {
+                            entry.insert(MetadataRequirement::required(
+                                requirement.key(),
+                                requirement.kind(),
+                            ));
+                        }
+                    }
+                }
+            }
         }
 
         Ok(Self {
             id,
             schema,
             capabilities,
+            metadata: metadata.into_values().collect(),
         })
     }
 
@@ -81,6 +110,19 @@ impl ResourceTypeDefinition {
     /// Returns all explicitly advertised capability bindings.
     pub fn capabilities(&self) -> &[CapabilityBinding] {
         &self.capabilities
+    }
+
+    /// Returns the effective metadata requirements for this resource type.
+    pub fn metadata_requirements(&self) -> &[MetadataRequirement] {
+        &self.metadata
+    }
+
+    /// Validates runtime metadata for one resource instance of this type.
+    pub fn validate_metadata(
+        &self,
+        metadata: &ResourceMetadata,
+    ) -> Result<(), MetadataValidationError> {
+        metadata.validate(&self.metadata)
     }
 
     /// Returns whether this type explicitly advertises a capability.
@@ -196,6 +238,15 @@ pub enum ResourceTypeError {
         /// Actual schema exposed by the resource view.
         actual: Schema,
     },
+    /// Two claimed capabilities require different kinds for the same metadata key.
+    ConflictingMetadataRequirement {
+        /// Metadata key with incompatible requirements.
+        key: Box<str>,
+        /// Kind already required by another capability.
+        existing: MetadataKind,
+        /// Conflicting kind required by this capability.
+        incoming: MetadataKind,
+    },
 }
 
 impl fmt::Display for ResourceTypeError {
@@ -217,6 +268,14 @@ impl fmt::Display for ResourceTypeError {
             } => write!(
                 f,
                 "capability '{capability}' schema mismatch: expected {expected:?}, got {actual:?}"
+            ),
+            Self::ConflictingMetadataRequirement {
+                key,
+                existing,
+                incoming,
+            } => write!(
+                f,
+                "metadata requirement '{key}' conflicts: {existing:?} vs {incoming:?}"
             ),
         }
     }
