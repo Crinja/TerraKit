@@ -6,6 +6,7 @@
 //! ResourceId =   which runtime value is this?
 
 mod capability;
+mod descriptor;
 mod id;
 mod metadata;
 mod resource_type;
@@ -15,6 +16,8 @@ mod view;
 pub use capability::{
     CapabilityBinding, CapabilityError, CapabilityRegistry, ResourceCapabilityDefinition,
 };
+
+pub use descriptor::{ResourceDescriptor, ResourceDescriptorError};
 
 pub use id::{IdError, MetadataKeyId, ResourceCapabilityId, ResourceId, ResourceTypeId};
 
