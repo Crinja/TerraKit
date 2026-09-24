@@ -1,9 +1,9 @@
 //! Resource metadata contracts
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::fmt;
 
-use super::ResourceView;
+use super::{MetadataKeyId, ResourceView};
 
 /// Primitive metadata value kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -22,41 +22,120 @@ pub enum MetadataKind {
     Identifier,
 }
 
+/// Definition of one reusable metadata key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataKeyDefinition {
+    id: MetadataKeyId,
+    kind: MetadataKind,
+}
+
+impl MetadataKeyDefinition {
+    /// Creates a metadata key definition.
+    pub fn new(id: MetadataKeyId, kind: MetadataKind) -> Self {
+        Self { id, kind }
+    }
+
+    /// Returns the versioned metadata key ID.
+    pub fn id(&self) -> &MetadataKeyId {
+        &self.id
+    }
+
+    /// Returns the value kind used by this metadata key.
+    pub const fn kind(&self) -> MetadataKind {
+        self.kind
+    }
+}
+
+/// Registry of known metadata keys.
+#[derive(Debug, Clone, Default)]
+pub struct MetadataKeyRegistry {
+    definitions: BTreeMap<MetadataKeyId, MetadataKeyDefinition>,
+}
+
+impl MetadataKeyRegistry {
+    /// Creates an empty metadata key registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers a metadata key definition.
+    pub fn register(
+        &mut self,
+        definition: MetadataKeyDefinition,
+    ) -> Result<(), MetadataKeyRegistryError> {
+        let id = definition.id().clone();
+
+        match self.definitions.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(definition);
+                Ok(())
+            }
+            Entry::Occupied(entry) => {
+                Err(MetadataKeyRegistryError::DuplicateKey(
+                    entry.key().clone(),
+                ))
+            }
+        }
+    }
+
+    /// Returns one metadata key definition by ID.
+    pub fn get(
+        &self,
+        id: &MetadataKeyId,
+    ) -> Option<&MetadataKeyDefinition> {
+        self.definitions.get(id)
+    }
+
+    /// Returns whether a metadata key is registered.
+    pub fn contains(&self, id: &MetadataKeyId) -> bool {
+        self.definitions.contains_key(id)
+    }
+
+    /// Iterates over all registered metadata key definitions.
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = &MetadataKeyDefinition> {
+        self.definitions.values()
+    }
+
+    /// Returns the number of registered metadata keys.
+    pub fn len(&self) -> usize {
+        self.definitions.len()
+    }
+
+    /// Returns whether no metadata keys are registered.
+    pub fn is_empty(&self) -> bool {
+        self.definitions.is_empty()
+    }
+}
+
 /// One metadata requirement declared by a capability contract.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MetadataRequirement {
-    key: Box<str>,
-    kind: MetadataKind,
+    key: MetadataKeyId,
     required: bool,
 }
 
 impl MetadataRequirement {
     /// Creates a required metadata entry.
-    pub fn required(key: impl Into<Box<str>>, kind: MetadataKind) -> Self {
+    pub fn required(key: MetadataKeyId) -> Self {
         Self {
-            key: key.into(),
-            kind,
+            key,
             required: true,
         }
     }
 
     /// Creates an optional metadata entry.
-    pub fn optional(key: impl Into<Box<str>>, kind: MetadataKind) -> Self {
+    pub fn optional(key: MetadataKeyId) -> Self {
         Self {
-            key: key.into(),
-            kind,
+            key,
             required: false,
         }
     }
 
     /// Returns the metadata key.
-    pub fn key(&self) -> &str {
+    pub fn key(&self) -> &MetadataKeyId {
         &self.key
-    }
-
-    /// Returns the required metadata kind.
-    pub const fn kind(&self) -> MetadataKind {
-        self.kind
     }
 
     /// Returns whether the metadata entry must be present.
@@ -95,7 +174,7 @@ impl ScopedMetadataRequirement {
 /// Runtime metadata values attached to one resource instance.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResourceMetadata {
-    scopes: BTreeMap<ResourceView, BTreeMap<Box<str>, MetadataValue>>,
+    scopes: BTreeMap<ResourceView, BTreeMap<MetadataKeyId, MetadataValue>>,
 }
 
 impl ResourceMetadata {
@@ -107,27 +186,44 @@ impl ResourceMetadata {
     }
 
     /// Inserts or replaces a metadata value on one resource view.
-    pub fn insert(&mut self, scope: ResourceView, key: impl Into<Box<str>>, value: MetadataValue) {
+    pub fn insert(
+        &mut self,
+        scope: ResourceView,
+        key: MetadataKeyId,
+        value: MetadataValue,
+    ) {
         self.scopes
             .entry(scope.canonical())
             .or_default()
-            .insert(key.into(), value);
+            .insert(key, value);
     }
 
     /// Inserts or replaces metadata on the complete resource.
-    pub fn insert_root(&mut self, key: impl Into<Box<str>>, value: MetadataValue) {
+    pub fn insert_root(
+        &mut self,
+        key: MetadataKeyId,
+        value: MetadataValue,
+    ) {
         self.insert(ResourceView::Root, key, value);
     }
 
     /// Returns one metadata value from exactly one resource view.
-    pub fn get_exact(&self, scope: &ResourceView, key: &str) -> Option<&MetadataValue> {
+    pub fn get_exact(
+        &self,
+        scope: &ResourceView,
+        key: &MetadataKeyId,
+    ) -> Option<&MetadataValue> {
         self.scopes
             .get(&scope.canonical())
             .and_then(|entries| entries.get(key))
     }
 
     /// Returns one effective metadata value using inheritance.
-    pub fn get(&self, scope: &ResourceView, key: &str) -> Option<&MetadataValue> {
+    pub fn get(
+        &self,
+        scope: &ResourceView,
+        key: &MetadataKeyId,
+    ) -> Option<&MetadataValue> {
         self.resolve(scope, key).map(|(_, value)| value)
     }
 
@@ -135,10 +231,10 @@ impl ResourceMetadata {
     pub fn resolve(
         &self,
         scope: &ResourceView,
-        key: &str,
+        key: &MetadataKeyId,
     ) -> Option<(ResourceView, &MetadataValue)> {
         let mut current = scope.canonical();
-
+    
         loop {
             if let Some(value) = self
                 .scopes
@@ -147,41 +243,52 @@ impl ResourceMetadata {
             {
                 return Some((current, value));
             }
-
+    
             current = current.parent()?;
         }
     }
 
     /// Returns whether one effective metadata key is present.
-    pub fn contains(&self, scope: &ResourceView, key: &str) -> bool {
+    pub fn contains(
+        &self,
+        scope: &ResourceView,
+        key: &MetadataKeyId,
+    ) -> bool {
         self.get(scope, key).is_some()
     }
 
     /// Returns whether one metadata key exists exactly on a scope.
-    pub fn contains_exact(&self, scope: &ResourceView, key: &str) -> bool {
+    pub fn contains_exact(
+        &self,
+        scope: &ResourceView,
+        key: &MetadataKeyId,
+    ) -> bool {
         self.get_exact(scope, key).is_some()
     }
 
     /// Returns all effective metadata for one resource view.
-    pub fn effective_entries(&self, scope: &ResourceView) -> BTreeMap<&str, &MetadataValue> {
+    pub fn effective_entries(
+        &self,
+        scope: &ResourceView,
+    ) -> BTreeMap<&MetadataKeyId, &MetadataValue> {
         let mut lineage = Vec::new();
         let mut current = Some(scope.canonical());
-
+    
         while let Some(view) = current {
             current = view.parent();
             lineage.push(view);
         }
-
+    
         let mut effective = BTreeMap::new();
-
+    
         for view in lineage.into_iter().rev() {
             if let Some(entries) = self.scopes.get(&view) {
                 for (key, value) in entries {
-                    effective.insert(key.as_ref(), value);
+                    effective.insert(key, value);
                 }
             }
         }
-
+    
         effective
     }
 
@@ -189,52 +296,74 @@ impl ResourceMetadata {
     pub fn validate(
         &self,
         requirements: &[ScopedMetadataRequirement],
+        registry: &MetadataKeyRegistry,
     ) -> Result<(), MetadataValidationError> {
-        for scoped in requirements {
-            let requirement = scoped.requirement();
-
-            match self.resolve(scoped.scope(), requirement.key()) {
-                Some((resolved_scope, value)) if value.kind() != requirement.kind() => {
-                    return Err(MetadataValidationError::KindMismatch {
-                        scope: scoped.scope().clone(),
-                        resolved_scope,
-                        key: requirement.key().into(),
-                        expected: requirement.kind(),
-                        actual: value.kind(),
-                    });
-                }
-                Some(_) => {}
-                None if requirement.is_required() => {
-                    return Err(MetadataValidationError::MissingRequired {
-                        scope: scoped.scope().clone(),
-                        key: requirement.key().into(),
-                        expected: requirement.kind(),
-                    });
-                }
-                None => {}
+        for (scope, key, value) in self.iter() {
+            let definition = registry
+                .get(key)
+                .ok_or_else(|| MetadataValidationError::UnknownMetadataKey {
+                    scope: scope.clone(),
+                    key: key.clone(),
+                })?;
+    
+            if value.kind() != definition.kind() {
+                return Err(MetadataValidationError::KindMismatch {
+                    scope: scope.clone(),
+                    key: key.clone(),
+                    expected: definition.kind(),
+                    actual: value.kind(),
+                });
             }
         }
-
+    
+        for scoped in requirements {
+            let requirement = scoped.requirement();
+    
+            let definition = registry
+                .get(requirement.key())
+                .ok_or_else(|| MetadataValidationError::UnknownMetadataKey {
+                    scope: scoped.scope().clone(),
+                    key: requirement.key().clone(),
+                })?;
+    
+            if self
+                .resolve(scoped.scope(), requirement.key())
+                .is_none()
+                && requirement.is_required()
+            {
+                return Err(MetadataValidationError::MissingRequired {
+                    scope: scoped.scope().clone(),
+                    key: requirement.key().clone(),
+                    expected: definition.kind(),
+                });
+            }
+        }
+    
         Ok(())
     }
 
     /// Iterates over all explicitly stored metadata entries.
-    pub fn iter(&self) -> impl Iterator<Item = (&ResourceView, &str, &MetadataValue)> {
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&ResourceView, &MetadataKeyId, &MetadataValue)> {
         self.scopes.iter().flat_map(|(scope, entries)| {
             entries
                 .iter()
-                .map(move |(key, value)| (scope, key.as_ref(), value))
+                .map(move |(key, value)| (scope, key, value))
         })
     }
 
     /// Iterates over metadata stored exactly on one scope.
-    pub fn iter_scope(&self, scope: &ResourceView) -> impl Iterator<Item = (&str, &MetadataValue)> {
+    pub fn iter_scope(
+        &self,
+        scope: &ResourceView,
+    ) -> impl Iterator<Item = (&MetadataKeyId, &MetadataValue)> {
         let scope = scope.canonical();
-
+    
         self.scopes
             .get(&scope)
             .into_iter()
-            .flat_map(|entries| entries.iter().map(|(key, value)| (key.as_ref(), value)))
+            .flat_map(|entries| entries.iter())
     }
 
     /// Iterates over all explicitly stored metadata scopes.
@@ -290,6 +419,25 @@ impl MetadataValue {
     }
 }
 
+/// Metadata key registry error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetadataKeyRegistryError {
+    /// A metadata key with the same stable ID is already registered.
+    DuplicateKey(MetadataKeyId),
+}
+
+impl fmt::Display for MetadataKeyRegistryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateKey(id) => {
+                write!(f, "metadata key '{id}' is already registered")
+            }
+        }
+    }
+}
+
+impl std::error::Error for MetadataKeyRegistryError {}
+
 /// Runtime metadata validation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetadataValidationError {
@@ -300,24 +448,29 @@ pub enum MetadataValidationError {
         /// Human-readable view-resolution error.
         message: Box<str>,
     },
+    /// Metadata used a key that has not been registered.
+    UnknownMetadataKey {
+        /// Resource view containing the metadata.
+        scope: ResourceView,
+        /// Unknown metadata key.
+        key: MetadataKeyId,
+    },
     /// A required metadata entry was not present.
     MissingRequired {
         /// Resource view requiring the metadata.
         scope: ResourceView,
         /// Missing metadata key.
-        key: Box<str>,
-        /// Kind required by the contract.
+        key: MetadataKeyId,
+        /// Kind required by the registered metadata key.
         expected: MetadataKind,
     },
     /// A metadata entry was present with the wrong kind.
     KindMismatch {
-        /// Resource view requiring the metadata.
+        /// Resource view containing the metadata.
         scope: ResourceView,
-        /// Scope that provided the closest metadata value.
-        resolved_scope: ResourceView,
         /// Metadata key whose value had the wrong kind.
-        key: Box<str>,
-        /// Kind required by the contract.
+        key: MetadataKeyId,
+        /// Kind defined by the metadata key.
         expected: MetadataKind,
         /// Kind provided by the resource instance.
         actual: MetadataKind,
@@ -330,6 +483,12 @@ impl fmt::Display for MetadataValidationError {
             Self::InvalidScope { scope, message } => {
                 write!(f, "invalid metadata scope {scope:?}: {message}")
             }
+            Self::UnknownMetadataKey { scope, key } => {
+                write!(
+                    f,
+                    "metadata key '{key}' on scope {scope:?} is not registered"
+                )
+            }
             Self::MissingRequired {
                 scope,
                 key,
@@ -340,13 +499,12 @@ impl fmt::Display for MetadataValidationError {
             ),
             Self::KindMismatch {
                 scope,
-                resolved_scope,
                 key,
                 expected,
                 actual,
             } => write!(
                 f,
-                "metadata '{key}' for scope {scope:?} resolves from {resolved_scope:?} with kind mismatch: expected {expected:?}, got {actual:?}"
+                "metadata '{key}' on scope {scope:?} has kind mismatch: expected {expected:?}, got {actual:?}"
             ),
         }
     }
