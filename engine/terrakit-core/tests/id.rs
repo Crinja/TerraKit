@@ -1,6 +1,4 @@
-use terrakit_core::resource::{
-    IdError, MetadataKeyId, ResourceCapabilityId, ResourceTypeId,
-};
+use terrakit_core::resource::{IdError, MetadataKeyId, ResourceCapabilityId, ResourceTypeId};
 
 #[test]
 fn versioned_ids_are_validated() {
