@@ -3,12 +3,13 @@
 //! Resource types are compositions of schema primatives
 //! These can be validated without core requireing unique domain knowledge
 
-use std::collections::{btree_map::Entry, BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, btree_map::Entry};
 use std::fmt;
 
 use super::{
     CapabilityBinding, CapabilityRegistry, MetadataKind, MetadataRequirement,
-    MetadataValidationError, ResourceCapabilityId, ResourceMetadata, ResourceTypeId, Schema,
+    MetadataValidationError, ResourceCapabilityId, ResourceMetadata, ResourceTypeId, ResourceView,
+    Schema, ScopedMetadataRequirement,
 };
 
 /// Complete structural contract for one resource representation.
@@ -17,7 +18,7 @@ pub struct ResourceTypeDefinition {
     id: ResourceTypeId,
     schema: Schema,
     capabilities: Vec<CapabilityBinding>,
-    metadata: Vec<MetadataRequirement>,
+    metadata: Vec<ScopedMetadataRequirement>,
 }
 
 impl ResourceTypeDefinition {
@@ -33,7 +34,7 @@ impl ResourceTypeDefinition {
             .map_err(|error| ResourceTypeError::InvalidSchema(error.to_string().into()))?;
 
         let mut seen = HashSet::with_capacity(capabilities.len());
-        let mut metadata = BTreeMap::<Box<str>, MetadataRequirement>::new();
+        let mut metadata = BTreeMap::<ResourceView, BTreeMap<Box<str>, MetadataRequirement>>::new();
 
         for binding in &capabilities {
             if !seen.insert(binding.capability().clone()) {
@@ -46,13 +47,12 @@ impl ResourceTypeDefinition {
                 ResourceTypeError::UnknownCapability(binding.capability().clone())
             })?;
 
-            let actual = binding
-                .resource_view()
-                .resolve(&schema)
-                .map_err(|error| ResourceTypeError::InvalidView {
+            let actual = binding.resource_view().resolve(&schema).map_err(|error| {
+                ResourceTypeError::InvalidView {
                     capability: binding.capability().clone(),
                     message: error.to_string().into(),
-                })?;
+                }
+            })?;
 
             if !definition.view_schema().accepts(actual) {
                 return Err(ResourceTypeError::CapabilitySchemaMismatch {
@@ -62,22 +62,26 @@ impl ResourceTypeDefinition {
                 });
             }
 
+            let scope = binding.resource_view().canonical();
+            let scoped = metadata.entry(scope.clone()).or_default();
+
             for requirement in definition.metadata_requirements() {
-                match metadata.entry(requirement.key().into()) {
+                match scoped.entry(requirement.key().into()) {
                     Entry::Vacant(entry) => {
                         entry.insert(requirement.clone());
                     }
                     Entry::Occupied(mut entry) => {
                         let existing = entry.get();
-            
+
                         if existing.kind() != requirement.kind() {
                             return Err(ResourceTypeError::ConflictingMetadataRequirement {
+                                scope: scope.clone(),
                                 key: requirement.key().into(),
                                 existing: existing.kind(),
                                 incoming: requirement.kind(),
                             });
                         }
-            
+
                         if requirement.is_required() && !existing.is_required() {
                             entry.insert(MetadataRequirement::required(
                                 requirement.key(),
@@ -89,11 +93,20 @@ impl ResourceTypeDefinition {
             }
         }
 
+        let metadata = metadata
+            .into_iter()
+            .flat_map(|(scope, requirements)| {
+                requirements.into_values().map(move |requirement| {
+                    ScopedMetadataRequirement::new(scope.clone(), requirement)
+                })
+            })
+            .collect();
+
         Ok(Self {
             id,
             schema,
             capabilities,
-            metadata: metadata.into_values().collect(),
+            metadata,
         })
     }
 
@@ -113,7 +126,7 @@ impl ResourceTypeDefinition {
     }
 
     /// Returns the effective metadata requirements for this resource type.
-    pub fn metadata_requirements(&self) -> &[MetadataRequirement] {
+    pub fn metadata_requirements(&self) -> &[ScopedMetadataRequirement] {
         &self.metadata
     }
 
@@ -122,6 +135,15 @@ impl ResourceTypeDefinition {
         &self,
         metadata: &ResourceMetadata,
     ) -> Result<(), MetadataValidationError> {
+        for scope in metadata.scopes() {
+            scope
+                .resolve(&self.schema)
+                .map_err(|error| MetadataValidationError::InvalidScope {
+                    scope: scope.clone(),
+                    message: error.to_string().into(),
+                })?;
+        }
+
         metadata.validate(&self.metadata)
     }
 
@@ -164,9 +186,9 @@ impl ResourceTypeRegistry {
                 entry.insert(definition);
                 Ok(())
             }
-            Entry::Occupied(entry) => {
-                Err(ResourceTypeRegistryError::DuplicateType(entry.key().clone()))
-            }
+            Entry::Occupied(entry) => Err(ResourceTypeRegistryError::DuplicateType(
+                entry.key().clone(),
+            )),
         }
     }
 
@@ -240,6 +262,8 @@ pub enum ResourceTypeError {
     },
     /// Two claimed capabilities require different kinds for the same metadata key.
     ConflictingMetadataRequirement {
+        /// Resource view with incompatible requirements.
+        scope: ResourceView,
         /// Metadata key with incompatible requirements.
         key: Box<str>,
         /// Kind already required by another capability.
@@ -270,12 +294,13 @@ impl fmt::Display for ResourceTypeError {
                 "capability '{capability}' schema mismatch: expected {expected:?}, got {actual:?}"
             ),
             Self::ConflictingMetadataRequirement {
+                scope,
                 key,
                 existing,
                 incoming,
             } => write!(
                 f,
-                "metadata requirement '{key}' conflicts: {existing:?} vs {incoming:?}"
+                "metadata requirement '{key}' on scope {scope:?} conflicts: {existing:?} vs {incoming:?}"
             ),
         }
     }
