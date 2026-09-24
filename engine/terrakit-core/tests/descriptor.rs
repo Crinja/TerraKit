@@ -1,60 +1,41 @@
 mod common;
 
-use common::{
-    capability_id, capability_registry, hydraulic_schema, metadata_key_id, metadata_key_registry,
-    resource_type_id,
-};
-
+use common::{hydraulic_schema, metadata_key_id, resource_registry, resource_type_id};
 use terrakit_core::resource::{
     CapabilityBinding, MetadataKind, MetadataValidationError, MetadataValue, ResourceDescriptor,
-    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceTypeDefinition, ResourceTypeId,
-    ResourceTypeRegistry, ResourceView, SchemaPath,
+    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceTypeDefinition, ResourceView,
+    SchemaPath,
 };
 
-fn hydraulic_types(
-    metadata_registry: &terrakit_core::resource::MetadataKeyRegistry,
-) -> (ResourceTypeRegistry, ResourceTypeId) {
-    let capabilities = capability_registry(metadata_registry);
+fn hydraulic_registry() -> (
+    terrakit_core::resource::ResourceRegistry,
+    terrakit_core::resource::ResourceTypeId,
+) {
+    let mut registry = resource_registry();
+    let resource_type = resource_type_id("domain.hydraulic-erosion-result@1");
 
-    let hydraulic = capability_id("domain.hydraulic-erosion@1");
+    registry
+        .register_resource_type(
+            ResourceTypeDefinition::new(
+                resource_type.clone(),
+                hydraulic_schema(),
+                vec![CapabilityBinding::view(
+                    common::capability_id("terrakit.erosion-flow@1"),
+                    ResourceView::Path(SchemaPath::field("flow")),
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
 
-    let erosion_flow = capability_id("terrakit.erosion-flow@1");
-
-    let vector_field = capability_id("terrakit.vector-field-2d@1");
-
-    let flow = ResourceView::Path(SchemaPath::field("flow"));
-
-    let id = resource_type_id("domain.hydraulic-erosion-result@1");
-
-    let definition = ResourceTypeDefinition::new(
-        id.clone(),
-        hydraulic_schema(),
-        vec![
-            CapabilityBinding::root(hydraulic),
-            CapabilityBinding::view(erosion_flow, flow.clone()),
-            CapabilityBinding::view(vector_field, flow),
-        ],
-        &capabilities,
-    )
-    .unwrap();
-
-    let mut types = ResourceTypeRegistry::new();
-
-    types.register(definition).unwrap();
-
-    (types, id)
+    (registry, resource_type)
 }
 
 #[test]
-fn resource_descriptor_accepts_valid_metadata() {
-    let metadata_registry = metadata_key_registry();
-
-    let (types, resource_type) = hydraulic_types(&metadata_registry);
-
+fn resource_descriptor_accepts_valid_inherited_metadata() {
+    let (registry, resource_type) = hydraulic_registry();
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
-
     let flow = ResourceView::Path(SchemaPath::field("flow"));
-
     let mut metadata = ResourceMetadata::new();
 
     metadata.insert_root(
@@ -62,33 +43,22 @@ fn resource_descriptor_accepts_valid_metadata() {
         MetadataValue::Identifier("world".into()),
     );
 
-    let descriptor = ResourceDescriptor::new(
-        ResourceId(42),
-        resource_type.clone(),
-        metadata,
-        &types,
-        &metadata_registry,
-    )
-    .unwrap();
+    let descriptor =
+        ResourceDescriptor::new(ResourceId(42), resource_type.clone(), metadata, &registry)
+            .unwrap();
 
     assert_eq!(descriptor.id(), &ResourceId(42));
-
     assert_eq!(descriptor.resource_type(), &resource_type);
-
     assert_eq!(
         descriptor.metadata().get(&flow, &coordinate_space),
-        Some(&MetadataValue::Identifier("world".into(),))
+        Some(&MetadataValue::Identifier("world".into()))
     );
 }
 
 #[test]
 fn resource_descriptor_rejects_missing_required_metadata() {
-    let metadata_registry = metadata_key_registry();
-
-    let (types, resource_type) = hydraulic_types(&metadata_registry);
-
+    let (registry, resource_type) = hydraulic_registry();
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
-
     let flow = ResourceView::Path(SchemaPath::field("flow"));
 
     assert_eq!(
@@ -96,8 +66,7 @@ fn resource_descriptor_rejects_missing_required_metadata() {
             ResourceId(42),
             resource_type,
             ResourceMetadata::new(),
-            &types,
-            &metadata_registry,
+            &registry,
         ),
         Err(ResourceDescriptorError::InvalidMetadata(
             MetadataValidationError::MissingRequired {
@@ -111,12 +80,8 @@ fn resource_descriptor_rejects_missing_required_metadata() {
 
 #[test]
 fn resource_descriptor_rejects_wrong_metadata_kind() {
-    let metadata_registry = metadata_key_registry();
-
-    let (types, resource_type) = hydraulic_types(&metadata_registry);
-
+    let (registry, resource_type) = hydraulic_registry();
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
-
     let mut metadata = ResourceMetadata::new();
 
     metadata.insert_root(
@@ -125,13 +90,7 @@ fn resource_descriptor_rejects_wrong_metadata_kind() {
     );
 
     assert_eq!(
-        ResourceDescriptor::new(
-            ResourceId(42),
-            resource_type,
-            metadata,
-            &types,
-            &metadata_registry,
-        ),
+        ResourceDescriptor::new(ResourceId(42), resource_type, metadata, &registry,),
         Err(ResourceDescriptorError::InvalidMetadata(
             MetadataValidationError::KindMismatch {
                 scope: ResourceView::Root,
@@ -144,36 +103,35 @@ fn resource_descriptor_rejects_wrong_metadata_kind() {
 }
 
 #[test]
-fn resource_descriptor_rejects_unknown_resource_type() {
-    let metadata_registry = metadata_key_registry();
-    let types = ResourceTypeRegistry::new();
+fn resource_descriptor_rejects_unknown_metadata_key() {
+    let (registry, resource_type) = hydraulic_registry();
+    let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
+    let unknown = metadata_key_id("plugin.unknown@1");
+    let mut metadata = ResourceMetadata::new();
 
-    let resource_type = resource_type_id("domain.unknown@1");
+    metadata.insert_root(coordinate_space, MetadataValue::Identifier("world".into()));
+    metadata.insert_root(unknown.clone(), MetadataValue::Identifier("value".into()));
 
     assert_eq!(
-        ResourceDescriptor::new(
-            ResourceId(42),
-            resource_type.clone(),
-            ResourceMetadata::new(),
-            &types,
-            &metadata_registry,
-        ),
-        Err(ResourceDescriptorError::UnknownResourceType(resource_type,))
+        ResourceDescriptor::new(ResourceId(42), resource_type, metadata, &registry,),
+        Err(ResourceDescriptorError::InvalidMetadata(
+            MetadataValidationError::UnknownMetadataKey {
+                scope: ResourceView::Root,
+                key: unknown,
+            }
+        ))
     );
 }
 
 #[test]
 fn resource_descriptor_rejects_invalid_metadata_scope() {
-    let metadata_registry = metadata_key_registry();
-
-    let (types, resource_type) = hydraulic_types(&metadata_registry);
-
+    let (registry, resource_type) = hydraulic_registry();
+    let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let units = metadata_key_id("terrakit.units@1");
-
     let invalid = ResourceView::Path(SchemaPath::field("missing"));
-
     let mut metadata = ResourceMetadata::new();
 
+    metadata.insert_root(coordinate_space, MetadataValue::Identifier("world".into()));
     metadata.insert(
         invalid.clone(),
         units,
@@ -185,47 +143,26 @@ fn resource_descriptor_rejects_invalid_metadata_scope() {
             ResourceId(42),
             resource_type,
             metadata,
-            &types,
-            &metadata_registry,
+            &registry,
         ),
         Err(ResourceDescriptorError::InvalidMetadata(
-            MetadataValidationError::InvalidScope {
-                scope,
-                ..
-            }
+            MetadataValidationError::InvalidScope { scope, .. }
         )) if scope == invalid
     ));
 }
 
 #[test]
-fn resource_descriptor_rejects_unknown_metadata_key() {
-    let metadata_registry = metadata_key_registry();
-
-    let (types, resource_type) = hydraulic_types(&metadata_registry);
-
-    let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
-
-    let unknown = metadata_key_id("plugin.unknown@1");
-
-    let mut metadata = ResourceMetadata::new();
-
-    metadata.insert_root(coordinate_space, MetadataValue::Identifier("world".into()));
-
-    metadata.insert_root(unknown.clone(), MetadataValue::Identifier("value".into()));
+fn resource_descriptor_rejects_unknown_resource_type() {
+    let registry = resource_registry();
+    let resource_type = resource_type_id("domain.unknown@1");
 
     assert_eq!(
         ResourceDescriptor::new(
             ResourceId(42),
-            resource_type,
-            metadata,
-            &types,
-            &metadata_registry,
+            resource_type.clone(),
+            ResourceMetadata::new(),
+            &registry,
         ),
-        Err(ResourceDescriptorError::InvalidMetadata(
-            MetadataValidationError::UnknownMetadataKey {
-                scope: ResourceView::Root,
-                key: unknown,
-            }
-        ))
+        Err(ResourceDescriptorError::UnknownResourceType(resource_type))
     );
 }
