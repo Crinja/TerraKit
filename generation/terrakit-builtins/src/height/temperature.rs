@@ -23,13 +23,11 @@ pub struct TemperatureMapStage {
 
 impl TemperatureMapStage {
     /// Creates a temperature map stage.
-    pub fn new(
-        stage_id: StageId,
-        output: ResourceKey,
-        scale: f64,
-    ) -> Result<Self, StageError> {
+    pub fn new(stage_id: StageId, output: ResourceKey, scale: f64) -> Result<Self, StageError> {
         if scale <= 0.0 {
-            return Err(StageError::new("temperature scale must be greater than zero"));
+            return Err(StageError::new(
+                "temperature scale must be greater than zero",
+            ));
         }
 
         Ok(Self {
