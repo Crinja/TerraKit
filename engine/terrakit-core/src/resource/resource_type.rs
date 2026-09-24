@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashSet, btree_map::Entry};
 use std::fmt;
 
 use super::{
-    CapabilityBinding, CapabilityRegistry, MetadataKind, MetadataRequirement,
+    CapabilityBinding, CapabilityRegistry, MetadataKeyId, MetadataKeyRegistry, MetadataRequirement,
     MetadataValidationError, ResourceCapabilityId, ResourceMetadata, ResourceTypeId, ResourceView,
     Schema, ScopedMetadataRequirement,
 };
@@ -34,7 +34,8 @@ impl ResourceTypeDefinition {
             .map_err(|error| ResourceTypeError::InvalidSchema(error.to_string().into()))?;
 
         let mut seen = HashSet::with_capacity(capabilities.len());
-        let mut metadata = BTreeMap::<ResourceView, BTreeMap<Box<str>, MetadataRequirement>>::new();
+        let mut metadata =
+            BTreeMap::<ResourceView, BTreeMap<MetadataKeyId, MetadataRequirement>>::new();
 
         for binding in &capabilities {
             if !seen.insert(binding.capability().clone()) {
@@ -66,27 +67,15 @@ impl ResourceTypeDefinition {
             let scoped = metadata.entry(scope.clone()).or_default();
 
             for requirement in definition.metadata_requirements() {
-                match scoped.entry(requirement.key().into()) {
+                match scoped.entry(requirement.key().clone()) {
                     Entry::Vacant(entry) => {
                         entry.insert(requirement.clone());
                     }
                     Entry::Occupied(mut entry) => {
                         let existing = entry.get();
 
-                        if existing.kind() != requirement.kind() {
-                            return Err(ResourceTypeError::ConflictingMetadataRequirement {
-                                scope: scope.clone(),
-                                key: requirement.key().into(),
-                                existing: existing.kind(),
-                                incoming: requirement.kind(),
-                            });
-                        }
-
                         if requirement.is_required() && !existing.is_required() {
-                            entry.insert(MetadataRequirement::required(
-                                requirement.key(),
-                                requirement.kind(),
-                            ));
+                            entry.insert(MetadataRequirement::required(requirement.key().clone()));
                         }
                     }
                 }
@@ -134,6 +123,7 @@ impl ResourceTypeDefinition {
     pub fn validate_metadata(
         &self,
         metadata: &ResourceMetadata,
+        metadata_registry: &MetadataKeyRegistry,
     ) -> Result<(), MetadataValidationError> {
         for scope in metadata.scopes() {
             scope
@@ -144,7 +134,7 @@ impl ResourceTypeDefinition {
                 })?;
         }
 
-        metadata.validate(&self.metadata)
+        metadata.validate(&self.metadata, metadata_registry)
     }
 
     /// Returns whether this type explicitly advertises a capability.
@@ -260,17 +250,6 @@ pub enum ResourceTypeError {
         /// Actual schema exposed by the resource view.
         actual: Schema,
     },
-    /// Two claimed capabilities require different kinds for the same metadata key.
-    ConflictingMetadataRequirement {
-        /// Resource view with incompatible requirements.
-        scope: ResourceView,
-        /// Metadata key with incompatible requirements.
-        key: Box<str>,
-        /// Kind already required by another capability.
-        existing: MetadataKind,
-        /// Conflicting kind required by this capability.
-        incoming: MetadataKind,
-    },
 }
 
 impl fmt::Display for ResourceTypeError {
@@ -292,15 +271,6 @@ impl fmt::Display for ResourceTypeError {
             } => write!(
                 f,
                 "capability '{capability}' schema mismatch: expected {expected:?}, got {actual:?}"
-            ),
-            Self::ConflictingMetadataRequirement {
-                scope,
-                key,
-                existing,
-                incoming,
-            } => write!(
-                f,
-                "metadata requirement '{key}' on scope {scope:?} conflicts: {existing:?} vs {incoming:?}"
             ),
         }
     }
