@@ -29,6 +29,7 @@ pub use id::{
 pub use metadata::{
     MetadataKind,
     MetadataRequirement,
+    MetadataValidationError,
     MetadataValue,
     ResourceMetadata,
 };
