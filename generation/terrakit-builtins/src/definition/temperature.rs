@@ -20,7 +20,7 @@ impl TemperatureMapDefinition {
     pub const TYPE_ID: &'static str = "terrakit.height.temperature";
     /// Compatible schema revision for this built-in definition.
     pub const SCHEMA_VERSION: StageSchemaVersion = StageSchemaVersion::V1;
-    
+
     /// Creates the built-in temperature map stage definition.
     pub fn new() -> Result<Self, DefinitionError> {
         Ok(Self {
