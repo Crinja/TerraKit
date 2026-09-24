@@ -16,10 +16,11 @@ pub use capability::{
     CapabilityBinding, CapabilityError, CapabilityRegistry, ResourceCapabilityDefinition,
 };
 
-pub use id::{IdError, ResourceCapabilityId, ResourceId, ResourceTypeId};
+pub use id::{IdError, MetadataKeyId, ResourceCapabilityId, ResourceId, ResourceTypeId};
 
 pub use metadata::{
-    MetadataKind, MetadataRequirement, MetadataValidationError, MetadataValue, ResourceMetadata,
+    MetadataKeyDefinition, MetadataKeyRegistry, MetadataKeyRegistryError, MetadataKind,
+    MetadataRequirement, MetadataValidationError, MetadataValue, ResourceMetadata,
     ScopedMetadataRequirement,
 };
 
