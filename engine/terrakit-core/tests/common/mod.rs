@@ -20,16 +20,8 @@ pub fn vector_field_schema() -> Schema {
 pub fn hydraulic_schema() -> Schema {
     Schema::structure(vec![
         SchemaField::new("flow", vector_field_schema()).unwrap(),
-        SchemaField::new(
-            "sediment",
-            Schema::dense_array(Schema::f32(), 2).unwrap(),
-        )
-        .unwrap(),
-        SchemaField::new(
-            "water",
-            Schema::dense_array(Schema::f32(), 2).unwrap(),
-        )
-        .unwrap(),
+        SchemaField::new("sediment", Schema::dense_array(Schema::f32(), 2).unwrap()).unwrap(),
+        SchemaField::new("water", Schema::dense_array(Schema::f32(), 2).unwrap()).unwrap(),
     ])
     .unwrap()
 }

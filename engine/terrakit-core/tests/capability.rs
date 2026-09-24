@@ -40,7 +40,9 @@ fn capability_definition_validates_schema_and_metadata_requirements() {
                 MetadataRequirement::optional("units", MetadataKind::String),
             ],
         ),
-        Err(CapabilityError::DuplicateMetadataRequirement("units".into()))
+        Err(CapabilityError::DuplicateMetadataRequirement(
+            "units".into()
+        ))
     );
 }
 
@@ -69,12 +71,8 @@ fn capability_registry_iteration_is_deterministic() {
     for id in ["terrakit.zeta@1", "terrakit.alpha@1", "terrakit.middle@1"] {
         registry
             .register(
-                ResourceCapabilityDefinition::new(
-                    capability_id(id),
-                    Schema::f32(),
-                    vec![],
-                )
-                .unwrap(),
+                ResourceCapabilityDefinition::new(capability_id(id), Schema::f32(), vec![])
+                    .unwrap(),
             )
             .unwrap();
     }
@@ -86,10 +84,6 @@ fn capability_registry_iteration_is_deterministic() {
 
     assert_eq!(
         ids,
-        vec![
-            "terrakit.alpha@1",
-            "terrakit.middle@1",
-            "terrakit.zeta@1",
-        ]
+        vec!["terrakit.alpha@1", "terrakit.middle@1", "terrakit.zeta@1",]
     );
 }
