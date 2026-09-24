@@ -3,11 +3,15 @@
 use std::fmt;
 
 use super::{
-    MetadataKeyRegistry, MetadataValidationError, ResourceId, ResourceMetadata, ResourceTypeId,
-    ResourceTypeRegistry,
+    MetadataValidationError, ResourceId, ResourceMetadata, ResourceRegistry, ResourceTypeId,
 };
 
 /// Description of one runtime resource instance.
+///
+/// The descriptor identifies the runtime value, references its resource type,
+/// and owns the metadata associated with that instance.
+///
+/// Storage is deliberately not part of the descriptor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResourceDescriptor {
     id: ResourceId,
@@ -21,15 +25,14 @@ impl ResourceDescriptor {
         id: ResourceId,
         resource_type: ResourceTypeId,
         metadata: ResourceMetadata,
-        type_registry: &ResourceTypeRegistry,
-        metadata_registry: &MetadataKeyRegistry,
+        registry: &ResourceRegistry,
     ) -> Result<Self, ResourceDescriptorError> {
-        let definition = type_registry
-            .get(&resource_type)
+        let definition = registry
+            .resource_type(&resource_type)
             .ok_or_else(|| ResourceDescriptorError::UnknownResourceType(resource_type.clone()))?;
 
-        definition
-            .validate_metadata(&metadata, metadata_registry)
+        registry
+            .validate_metadata(definition, &metadata)
             .map_err(ResourceDescriptorError::InvalidMetadata)?;
 
         Ok(Self {

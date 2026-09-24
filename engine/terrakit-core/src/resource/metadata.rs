@@ -48,7 +48,7 @@ impl MetadataKeyDefinition {
 
 /// Registry of known metadata keys.
 #[derive(Debug, Clone, Default)]
-pub struct MetadataKeyRegistry {
+pub(crate) struct MetadataKeyRegistry {
     definitions: BTreeMap<MetadataKeyId, MetadataKeyDefinition>,
 }
 
@@ -89,16 +89,6 @@ impl MetadataKeyRegistry {
     /// Iterates over all registered metadata key definitions.
     pub fn iter(&self) -> impl Iterator<Item = &MetadataKeyDefinition> {
         self.definitions.values()
-    }
-
-    /// Returns the number of registered metadata keys.
-    pub fn len(&self) -> usize {
-        self.definitions.len()
-    }
-
-    /// Returns whether no metadata keys are registered.
-    pub fn is_empty(&self) -> bool {
-        self.definitions.is_empty()
     }
 }
 
@@ -142,14 +132,20 @@ impl MetadataRequirement {
 pub struct ScopedMetadataRequirement {
     scope: ResourceView,
     requirement: MetadataRequirement,
+    kind: MetadataKind,
 }
 
 impl ScopedMetadataRequirement {
-    /// Creates a metadata requirement for one resource view.
-    pub fn new(scope: ResourceView, requirement: MetadataRequirement) -> Self {
+    /// Creates a resolved metadata requirement for one resource view.
+    pub(crate) fn new(
+        scope: ResourceView,
+        requirement: MetadataRequirement,
+        kind: MetadataKind,
+    ) -> Self {
         Self {
             scope: scope.canonical(),
             requirement,
+            kind,
         }
     }
 
@@ -161,6 +157,11 @@ impl ScopedMetadataRequirement {
     /// Returns the metadata requirement.
     pub fn requirement(&self) -> &MetadataRequirement {
         &self.requirement
+    }
+
+    /// Returns the metadata kind resolved when the resource type was registered.
+    pub const fn kind(&self) -> MetadataKind {
+        self.kind
     }
 }
 
@@ -261,7 +262,7 @@ impl ResourceMetadata {
     }
 
     /// Validates metadata against a set of scoped requirements.
-    pub fn validate(
+    pub(crate) fn validate(
         &self,
         requirements: &[ScopedMetadataRequirement],
         registry: &MetadataKeyRegistry,
@@ -288,21 +289,24 @@ impl ResourceMetadata {
         for scoped in requirements {
             let requirement = scoped.requirement();
 
-            let definition = registry.get(requirement.key()).ok_or_else(|| {
-                MetadataValidationError::UnknownMetadataKey {
-                    scope: scoped.scope().clone(),
-                    key: requirement.key().clone(),
+            match self.resolve(scoped.scope(), requirement.key()) {
+                Some((resolved_scope, value)) if value.kind() != scoped.kind() => {
+                    return Err(MetadataValidationError::KindMismatch {
+                        scope: resolved_scope,
+                        key: requirement.key().clone(),
+                        expected: scoped.kind(),
+                        actual: value.kind(),
+                    });
                 }
-            })?;
-
-            if self.resolve(scoped.scope(), requirement.key()).is_none()
-                && requirement.is_required()
-            {
-                return Err(MetadataValidationError::MissingRequired {
-                    scope: scoped.scope().clone(),
-                    key: requirement.key().clone(),
-                    expected: definition.kind(),
-                });
+                Some(_) => {}
+                None if requirement.is_required() => {
+                    return Err(MetadataValidationError::MissingRequired {
+                        scope: scoped.scope().clone(),
+                        key: requirement.key().clone(),
+                        expected: scoped.kind(),
+                    });
+                }
+                None => {}
             }
         }
 

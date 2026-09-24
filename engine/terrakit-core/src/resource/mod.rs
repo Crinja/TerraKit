@@ -9,27 +9,25 @@ mod capability;
 mod descriptor;
 mod id;
 mod metadata;
+mod registry;
 mod resource_type;
 mod schema;
 mod view;
 
-pub use capability::{
-    CapabilityBinding, CapabilityError, CapabilityRegistry, ResourceCapabilityDefinition,
-};
+pub use capability::{CapabilityBinding, CapabilityError, ResourceCapabilityDefinition};
 
 pub use descriptor::{ResourceDescriptor, ResourceDescriptorError};
 
 pub use id::{IdError, MetadataKeyId, ResourceCapabilityId, ResourceId, ResourceTypeId};
 
 pub use metadata::{
-    MetadataKeyDefinition, MetadataKeyRegistry, MetadataKeyRegistryError, MetadataKind,
-    MetadataRequirement, MetadataValidationError, MetadataValue, ResourceMetadata,
-    ScopedMetadataRequirement,
+    MetadataKeyDefinition, MetadataKind, MetadataRequirement, MetadataValidationError,
+    MetadataValue, ResourceMetadata, ScopedMetadataRequirement,
 };
 
-pub use resource_type::{
-    ResourceTypeDefinition, ResourceTypeError, ResourceTypeRegistry, ResourceTypeRegistryError,
-};
+pub use registry::{ResourceRegistry, ResourceRegistryError};
+
+pub use resource_type::{ResourceTypeDefinition, ResourceTypeError};
 
 pub use schema::{NumericType, Schema, SchemaError, SchemaField, SchemaVariant};
 

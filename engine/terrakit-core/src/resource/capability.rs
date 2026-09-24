@@ -6,10 +6,7 @@
 use std::collections::{BTreeMap, HashSet, btree_map::Entry};
 use std::fmt;
 
-use super::{
-    MetadataKeyId, MetadataKeyRegistry, MetadataRequirement, ResourceCapabilityId, ResourceView,
-    Schema,
-};
+use super::{MetadataRequirement, ResourceCapabilityId, ResourceView, Schema};
 
 /// Definition of one reusable resource capability
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +22,6 @@ impl ResourceCapabilityDefinition {
         id: ResourceCapabilityId,
         view_schema: Schema,
         metadata: Vec<MetadataRequirement>,
-        metadata_registry: &MetadataKeyRegistry,
     ) -> Result<Self, CapabilityError> {
         view_schema
             .validate()
@@ -34,12 +30,6 @@ impl ResourceCapabilityDefinition {
         let mut keys = HashSet::with_capacity(metadata.len());
 
         for requirement in &metadata {
-            if !metadata_registry.contains(requirement.key()) {
-                return Err(CapabilityError::UnknownMetadataKey(
-                    requirement.key().clone(),
-                ));
-            }
-
             if !keys.insert(requirement.key().clone()) {
                 return Err(CapabilityError::DuplicateMetadataRequirement(
                     requirement.key().clone(),
@@ -112,7 +102,7 @@ impl CapabilityBinding {
 ///
 /// It does not decide which capability a consumer should use.
 #[derive(Debug, Clone, Default)]
-pub struct CapabilityRegistry {
+pub(crate) struct CapabilityRegistry {
     definitions: BTreeMap<ResourceCapabilityId, ResourceCapabilityDefinition>,
 }
 
@@ -157,16 +147,6 @@ impl CapabilityRegistry {
     pub fn iter(&self) -> impl Iterator<Item = &ResourceCapabilityDefinition> {
         self.definitions.values()
     }
-
-    /// Return the number of registered capabilities.
-    pub fn len(&self) -> usize {
-        self.definitions.len()
-    }
-
-    /// Return whether no capabilities are registered.
-    pub fn is_empty(&self) -> bool {
-        self.definitions.is_empty()
-    }
 }
 
 /// Capability registration/definition error.
@@ -176,10 +156,8 @@ pub enum CapabilityError {
     InvalidSchema(Box<str>),
     /// A capability ID was registered more than once.
     DuplicateCapability(ResourceCapabilityId),
-    /// A capability referenced an unknown metadata key.
-    UnknownMetadataKey(MetadataKeyId),
     /// A metadata key was required more than once.
-    DuplicateMetadataRequirement(MetadataKeyId),
+    DuplicateMetadataRequirement(super::MetadataKeyId),
 }
 
 impl fmt::Display for CapabilityError {
@@ -187,9 +165,6 @@ impl fmt::Display for CapabilityError {
         match self {
             Self::InvalidSchema(message) => write!(f, "invalid capability schema: {message}"),
             Self::DuplicateCapability(id) => write!(f, "capability '{id}' is already registered"),
-            Self::UnknownMetadataKey(id) => {
-                write!(f, "metadata key '{id}' is not registered")
-            }
             Self::DuplicateMetadataRequirement(id) => write!(
                 f,
                 "capability metadata requirement '{id}' is declared more than once"

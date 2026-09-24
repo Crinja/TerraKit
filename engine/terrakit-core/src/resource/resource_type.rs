@@ -6,10 +6,12 @@
 use std::collections::{BTreeMap, HashSet, btree_map::Entry};
 use std::fmt;
 
+use super::capability::CapabilityRegistry;
+use super::metadata::MetadataKeyRegistry;
 use super::{
-    CapabilityBinding, CapabilityRegistry, MetadataKeyId, MetadataKeyRegistry, MetadataRequirement,
-    MetadataValidationError, ResourceCapabilityId, ResourceMetadata, ResourceTypeId, ResourceView,
-    Schema, ScopedMetadataRequirement,
+    CapabilityBinding, MetadataKeyId, MetadataKind, MetadataRequirement, MetadataValidationError,
+    ResourceCapabilityId, ResourceMetadata, ResourceTypeId, ResourceView, Schema,
+    ScopedMetadataRequirement,
 };
 
 /// Complete structural contract for one resource representation.
@@ -27,15 +29,12 @@ impl ResourceTypeDefinition {
         id: ResourceTypeId,
         schema: Schema,
         capabilities: Vec<CapabilityBinding>,
-        registry: &CapabilityRegistry,
     ) -> Result<Self, ResourceTypeError> {
         schema
             .validate()
             .map_err(|error| ResourceTypeError::InvalidSchema(error.to_string().into()))?;
 
         let mut seen = HashSet::with_capacity(capabilities.len());
-        let mut metadata =
-            BTreeMap::<ResourceView, BTreeMap<MetadataKeyId, MetadataRequirement>>::new();
 
         for binding in &capabilities {
             if !seen.insert(binding.capability().clone()) {
@@ -44,16 +43,45 @@ impl ResourceTypeDefinition {
                 ));
             }
 
-            let definition = registry.get(binding.capability()).ok_or_else(|| {
-                ResourceTypeError::UnknownCapability(binding.capability().clone())
-            })?;
-
-            let actual = binding.resource_view().resolve(&schema).map_err(|error| {
+            binding.resource_view().resolve(&schema).map_err(|error| {
                 ResourceTypeError::InvalidView {
                     capability: binding.capability().clone(),
                     message: error.to_string().into(),
                 }
             })?;
+        }
+
+        Ok(Self {
+            id,
+            schema,
+            capabilities,
+            metadata: Vec::new(),
+        })
+    }
+
+    /// Resolves cross-contract requirements before registration.
+    pub(crate) fn resolve_contracts(
+        mut self,
+        capabilities: &CapabilityRegistry,
+        metadata_registry: &MetadataKeyRegistry,
+    ) -> Result<Self, ResourceTypeError> {
+        let mut metadata = BTreeMap::<
+            ResourceView,
+            BTreeMap<MetadataKeyId, (MetadataRequirement, MetadataKind)>,
+        >::new();
+
+        for binding in &self.capabilities {
+            let definition = capabilities.get(binding.capability()).ok_or_else(|| {
+                ResourceTypeError::UnknownCapability(binding.capability().clone())
+            })?;
+
+            let actual = binding
+                .resource_view()
+                .resolve(&self.schema)
+                .map_err(|error| ResourceTypeError::InvalidView {
+                    capability: binding.capability().clone(),
+                    message: error.to_string().into(),
+                })?;
 
             if !definition.view_schema().accepts(actual) {
                 return Err(ResourceTypeError::CapabilitySchemaMismatch {
@@ -64,39 +92,46 @@ impl ResourceTypeDefinition {
             }
 
             let scope = binding.resource_view().canonical();
-            let scoped = metadata.entry(scope.clone()).or_default();
+            let scoped = metadata.entry(scope).or_default();
 
             for requirement in definition.metadata_requirements() {
+                let key_definition = metadata_registry.get(requirement.key()).ok_or_else(|| {
+                    ResourceTypeError::UnknownMetadataKey {
+                        capability: binding.capability().clone(),
+                        key: requirement.key().clone(),
+                    }
+                })?;
+
                 match scoped.entry(requirement.key().clone()) {
                     Entry::Vacant(entry) => {
-                        entry.insert(requirement.clone());
+                        entry.insert((requirement.clone(), key_definition.kind()));
                     }
                     Entry::Occupied(mut entry) => {
-                        let existing = entry.get();
+                        let (existing, kind) = entry.get();
+                        let should_require = requirement.is_required() && !existing.is_required();
+                        let kind = *kind;
 
-                        if requirement.is_required() && !existing.is_required() {
-                            entry.insert(MetadataRequirement::required(requirement.key().clone()));
+                        if should_require {
+                            entry.insert((
+                                MetadataRequirement::required(requirement.key().clone()),
+                                kind,
+                            ));
                         }
                     }
                 }
             }
         }
 
-        let metadata = metadata
+        self.metadata = metadata
             .into_iter()
             .flat_map(|(scope, requirements)| {
-                requirements.into_values().map(move |requirement| {
-                    ScopedMetadataRequirement::new(scope.clone(), requirement)
+                requirements.into_values().map(move |(requirement, kind)| {
+                    ScopedMetadataRequirement::new(scope.clone(), requirement, kind)
                 })
             })
             .collect();
 
-        Ok(Self {
-            id,
-            schema,
-            capabilities,
-            metadata,
-        })
+        Ok(self)
     }
 
     /// Returns the resource type's stable versioned ID.
@@ -120,7 +155,7 @@ impl ResourceTypeDefinition {
     }
 
     /// Validates runtime metadata for one resource instance of this type.
-    pub fn validate_metadata(
+    pub(crate) fn validate_metadata(
         &self,
         metadata: &ResourceMetadata,
         metadata_registry: &MetadataKeyRegistry,
@@ -154,7 +189,7 @@ impl ResourceTypeDefinition {
 
 /// Registry of concrete resource type definitions.
 #[derive(Debug, Clone, Default)]
-pub struct ResourceTypeRegistry {
+pub(crate) struct ResourceTypeRegistry {
     definitions: BTreeMap<ResourceTypeId, ResourceTypeDefinition>,
 }
 
@@ -196,21 +231,11 @@ impl ResourceTypeRegistry {
     pub fn contains(&self, id: &ResourceTypeId) -> bool {
         self.definitions.contains_key(id)
     }
-
-    /// Returns the number of registered resource types.
-    pub fn len(&self) -> usize {
-        self.definitions.len()
-    }
-
-    /// Returns whether no resource types are registered.
-    pub fn is_empty(&self) -> bool {
-        self.definitions.is_empty()
-    }
 }
 
 /// Resource type registry error.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResourceTypeRegistryError {
+pub(crate) enum ResourceTypeRegistryError {
     /// A resource type with the same stable ID is already registered.
     DuplicateType(ResourceTypeId),
 }
@@ -232,6 +257,13 @@ pub enum ResourceTypeError {
     InvalidSchema(Box<str>),
     /// A claimed capability was not registered.
     UnknownCapability(ResourceCapabilityId),
+    /// A registered capability references a metadata key missing from this registry.
+    UnknownMetadataKey {
+        /// Capability containing the metadata requirement.
+        capability: ResourceCapabilityId,
+        /// Missing metadata key.
+        key: MetadataKeyId,
+    },
     /// A resource claimed the same capability more than once.
     DuplicateCapabilityBinding(ResourceCapabilityId),
     /// The binding's view path did not exist in the resource schema.
@@ -257,6 +289,10 @@ impl fmt::Display for ResourceTypeError {
         match self {
             Self::InvalidSchema(message) => write!(f, "invalid resource schema: {message}"),
             Self::UnknownCapability(id) => write!(f, "unknown capability '{id}'"),
+            Self::UnknownMetadataKey { capability, key } => write!(
+                f,
+                "capability '{capability}' references unknown metadata key '{key}'"
+            ),
             Self::DuplicateCapabilityBinding(id) => {
                 write!(f, "capability '{id}' is bound more than once")
             }
