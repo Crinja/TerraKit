@@ -5,7 +5,7 @@ use std::fmt;
 use super::Schema;
 
 /// One navigation step within a structural schema.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SchemaPathSegment {
     /// Select a named field from a struct.
     Field(Box<str>),
@@ -21,7 +21,7 @@ pub enum SchemaPathSegment {
 }
 
 /// Stable path from a resource root to a nested structural view.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SchemaPath {
     segments: Vec<SchemaPathSegment>,
 }
@@ -34,6 +34,23 @@ impl SchemaPath {
         }
     }
 
+    /// Returns whether this path selects the resource root.
+    pub fn is_root(&self) -> bool {
+        self.segments.is_empty()
+    }
+
+    /// Returns the immediate parent path.
+    pub fn parent(&self) -> Option<Self> {
+        if self.segments.is_empty() {
+            return None;
+        }
+
+        let mut segments = self.segments.clone();
+        segments.pop();
+
+        Some(Self { segments })
+    }
+
     /// Creates a path selecting one root field.
     pub fn field(name: impl Into<Box<str>>) -> Self {
         Self {
@@ -43,8 +60,7 @@ impl SchemaPath {
 
     /// Appends another field selection.
     pub fn then_field(mut self, name: impl Into<Box<str>>) -> Self {
-        self.segments
-            .push(SchemaPathSegment::Field(name.into()));
+        self.segments.push(SchemaPathSegment::Field(name.into()));
         self
     }
 
@@ -62,8 +78,7 @@ impl SchemaPath {
 
     /// Appends a variant selection.
     pub fn then_variant(mut self, name: impl Into<Box<str>>) -> Self {
-        self.segments
-            .push(SchemaPathSegment::Variant(name.into()));
+        self.segments.push(SchemaPathSegment::Variant(name.into()));
         self
     }
 
@@ -88,9 +103,7 @@ impl SchemaPath {
                         .ok_or_else(|| ViewError::UnknownField(name.clone()))?;
                 }
                 SchemaPathSegment::Element => {
-                    current = current
-                        .element()
-                        .ok_or(ViewError::ElementOnNonArray)?;
+                    current = current.element().ok_or(ViewError::ElementOnNonArray)?;
                 }
                 SchemaPathSegment::OptionalValue => {
                     current = current
@@ -114,7 +127,7 @@ impl SchemaPath {
 }
 
 /// Which logical part of a resource backs a capability.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ResourceView {
     /// The complete resource schema satisfies the capability.
     Root,
@@ -128,6 +141,31 @@ impl ResourceView {
         match self {
             Self::Root => Ok(root),
             Self::Path(path) => path.resolve(root),
+        }
+    }
+
+    /// Returns the canonical form of this resource view.
+    pub fn canonical(&self) -> Self {
+        match self {
+            Self::Root => Self::Root,
+            Self::Path(path) if path.is_root() => Self::Root,
+            Self::Path(path) => Self::Path(path.clone()),
+        }
+    }
+
+    /// Returns the immediate parent resource view.
+    pub fn parent(&self) -> Option<Self> {
+        match self.canonical() {
+            Self::Root => None,
+            Self::Path(path) => {
+                let parent = path.parent()?;
+
+                if parent.is_root() {
+                    Some(Self::Root)
+                } else {
+                    Some(Self::Path(parent))
+                }
+            }
         }
     }
 }
@@ -152,12 +190,25 @@ pub enum ViewError {
 impl fmt::Display for ViewError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnknownField(field) => write!(f, "resource view references unknown field '{field}'"),
+            Self::UnknownField(field) => {
+                write!(f, "resource view references unknown field '{field}'")
+            }
             Self::FieldOnNonStruct => write!(f, "resource view field selection requires a struct"),
-            Self::ElementOnNonArray => write!(f, "resource view element selection requires an array-like schema"),
-            Self::OptionalValueOnNonOptional => write!(f, "resource view optional value selection requires an optional schema"),
-            Self::UnknownVariant(variant) => write!(f, "resource view references unknown variant '{variant}'"),
-            Self::VariantOnNonVariant => write!(f, "resource view variant selection requires a variant schema"),
+            Self::ElementOnNonArray => write!(
+                f,
+                "resource view element selection requires an array-like schema"
+            ),
+            Self::OptionalValueOnNonOptional => write!(
+                f,
+                "resource view optional value selection requires an optional schema"
+            ),
+            Self::UnknownVariant(variant) => {
+                write!(f, "resource view references unknown variant '{variant}'")
+            }
+            Self::VariantOnNonVariant => write!(
+                f,
+                "resource view variant selection requires a variant schema"
+            ),
         }
     }
 }
