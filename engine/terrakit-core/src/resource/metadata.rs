@@ -71,18 +71,13 @@ impl MetadataKeyRegistry {
                 Ok(())
             }
             Entry::Occupied(entry) => {
-                Err(MetadataKeyRegistryError::DuplicateKey(
-                    entry.key().clone(),
-                ))
+                Err(MetadataKeyRegistryError::DuplicateKey(entry.key().clone()))
             }
         }
     }
 
     /// Returns one metadata key definition by ID.
-    pub fn get(
-        &self,
-        id: &MetadataKeyId,
-    ) -> Option<&MetadataKeyDefinition> {
+    pub fn get(&self, id: &MetadataKeyId) -> Option<&MetadataKeyDefinition> {
         self.definitions.get(id)
     }
 
@@ -92,9 +87,7 @@ impl MetadataKeyRegistry {
     }
 
     /// Iterates over all registered metadata key definitions.
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<Item = &MetadataKeyDefinition> {
+    pub fn iter(&self) -> impl Iterator<Item = &MetadataKeyDefinition> {
         self.definitions.values()
     }
 
@@ -186,12 +179,7 @@ impl ResourceMetadata {
     }
 
     /// Inserts or replaces a metadata value on one resource view.
-    pub fn insert(
-        &mut self,
-        scope: ResourceView,
-        key: MetadataKeyId,
-        value: MetadataValue,
-    ) {
+    pub fn insert(&mut self, scope: ResourceView, key: MetadataKeyId, value: MetadataValue) {
         self.scopes
             .entry(scope.canonical())
             .or_default()
@@ -199,31 +187,19 @@ impl ResourceMetadata {
     }
 
     /// Inserts or replaces metadata on the complete resource.
-    pub fn insert_root(
-        &mut self,
-        key: MetadataKeyId,
-        value: MetadataValue,
-    ) {
+    pub fn insert_root(&mut self, key: MetadataKeyId, value: MetadataValue) {
         self.insert(ResourceView::Root, key, value);
     }
 
     /// Returns one metadata value from exactly one resource view.
-    pub fn get_exact(
-        &self,
-        scope: &ResourceView,
-        key: &MetadataKeyId,
-    ) -> Option<&MetadataValue> {
+    pub fn get_exact(&self, scope: &ResourceView, key: &MetadataKeyId) -> Option<&MetadataValue> {
         self.scopes
             .get(&scope.canonical())
             .and_then(|entries| entries.get(key))
     }
 
     /// Returns one effective metadata value using inheritance.
-    pub fn get(
-        &self,
-        scope: &ResourceView,
-        key: &MetadataKeyId,
-    ) -> Option<&MetadataValue> {
+    pub fn get(&self, scope: &ResourceView, key: &MetadataKeyId) -> Option<&MetadataValue> {
         self.resolve(scope, key).map(|(_, value)| value)
     }
 
@@ -234,7 +210,7 @@ impl ResourceMetadata {
         key: &MetadataKeyId,
     ) -> Option<(ResourceView, &MetadataValue)> {
         let mut current = scope.canonical();
-    
+
         loop {
             if let Some(value) = self
                 .scopes
@@ -243,26 +219,18 @@ impl ResourceMetadata {
             {
                 return Some((current, value));
             }
-    
+
             current = current.parent()?;
         }
     }
 
     /// Returns whether one effective metadata key is present.
-    pub fn contains(
-        &self,
-        scope: &ResourceView,
-        key: &MetadataKeyId,
-    ) -> bool {
+    pub fn contains(&self, scope: &ResourceView, key: &MetadataKeyId) -> bool {
         self.get(scope, key).is_some()
     }
 
     /// Returns whether one metadata key exists exactly on a scope.
-    pub fn contains_exact(
-        &self,
-        scope: &ResourceView,
-        key: &MetadataKeyId,
-    ) -> bool {
+    pub fn contains_exact(&self, scope: &ResourceView, key: &MetadataKeyId) -> bool {
         self.get_exact(scope, key).is_some()
     }
 
@@ -273,14 +241,14 @@ impl ResourceMetadata {
     ) -> BTreeMap<&MetadataKeyId, &MetadataValue> {
         let mut lineage = Vec::new();
         let mut current = Some(scope.canonical());
-    
+
         while let Some(view) = current {
             current = view.parent();
             lineage.push(view);
         }
-    
+
         let mut effective = BTreeMap::new();
-    
+
         for view in lineage.into_iter().rev() {
             if let Some(entries) = self.scopes.get(&view) {
                 for (key, value) in entries {
@@ -288,7 +256,7 @@ impl ResourceMetadata {
                 }
             }
         }
-    
+
         effective
     }
 
@@ -299,13 +267,14 @@ impl ResourceMetadata {
         registry: &MetadataKeyRegistry,
     ) -> Result<(), MetadataValidationError> {
         for (scope, key, value) in self.iter() {
-            let definition = registry
-                .get(key)
-                .ok_or_else(|| MetadataValidationError::UnknownMetadataKey {
-                    scope: scope.clone(),
-                    key: key.clone(),
-                })?;
-    
+            let definition =
+                registry
+                    .get(key)
+                    .ok_or_else(|| MetadataValidationError::UnknownMetadataKey {
+                        scope: scope.clone(),
+                        key: key.clone(),
+                    })?;
+
             if value.kind() != definition.kind() {
                 return Err(MetadataValidationError::KindMismatch {
                     scope: scope.clone(),
@@ -315,20 +284,18 @@ impl ResourceMetadata {
                 });
             }
         }
-    
+
         for scoped in requirements {
             let requirement = scoped.requirement();
-    
-            let definition = registry
-                .get(requirement.key())
-                .ok_or_else(|| MetadataValidationError::UnknownMetadataKey {
+
+            let definition = registry.get(requirement.key()).ok_or_else(|| {
+                MetadataValidationError::UnknownMetadataKey {
                     scope: scoped.scope().clone(),
                     key: requirement.key().clone(),
-                })?;
-    
-            if self
-                .resolve(scoped.scope(), requirement.key())
-                .is_none()
+                }
+            })?;
+
+            if self.resolve(scoped.scope(), requirement.key()).is_none()
                 && requirement.is_required()
             {
                 return Err(MetadataValidationError::MissingRequired {
@@ -338,18 +305,14 @@ impl ResourceMetadata {
                 });
             }
         }
-    
+
         Ok(())
     }
 
     /// Iterates over all explicitly stored metadata entries.
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<Item = (&ResourceView, &MetadataKeyId, &MetadataValue)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&ResourceView, &MetadataKeyId, &MetadataValue)> {
         self.scopes.iter().flat_map(|(scope, entries)| {
-            entries
-                .iter()
-                .map(move |(key, value)| (scope, key, value))
+            entries.iter().map(move |(key, value)| (scope, key, value))
         })
     }
 
@@ -359,7 +322,7 @@ impl ResourceMetadata {
         scope: &ResourceView,
     ) -> impl Iterator<Item = (&MetadataKeyId, &MetadataValue)> {
         let scope = scope.canonical();
-    
+
         self.scopes
             .get(&scope)
             .into_iter()
