@@ -8,11 +8,7 @@ fn schema_path_resolves_every_navigation_type() {
         SchemaVariant::new(
             "value",
             Schema::structure(vec![
-                SchemaField::new(
-                    "directions",
-                    Schema::fixed_array(Schema::vec2_f32(), 2),
-                )
-                .unwrap(),
+                SchemaField::new("directions", Schema::fixed_array(Schema::vec2_f32(), 2)).unwrap(),
             ])
             .unwrap(),
         )
@@ -21,11 +17,7 @@ fn schema_path_resolves_every_navigation_type() {
     .unwrap();
 
     let schema = Schema::structure(vec![
-        SchemaField::new(
-            "records",
-            Schema::array(Schema::optional(variant)),
-        )
-        .unwrap(),
+        SchemaField::new("records", Schema::array(Schema::optional(variant))).unwrap(),
     ])
     .unwrap();
 
@@ -71,5 +63,36 @@ fn schema_path_reports_navigation_errors() {
     assert_eq!(
         SchemaPath::root().then_variant("x").resolve(&Schema::f32()),
         Err(ViewError::VariantOnNonVariant)
+    );
+}
+
+#[test]
+fn resource_view_parent_walks_towards_root() {
+    let leaf = ResourceView::Path(
+        SchemaPath::field("records")
+            .then_element()
+            .then_field("position"),
+    );
+
+    let parent = leaf.parent().unwrap();
+
+    assert_eq!(
+        parent,
+        ResourceView::Path(SchemaPath::field("records").then_element(),)
+    );
+
+    let parent = parent.parent().unwrap();
+
+    assert_eq!(parent, ResourceView::Path(SchemaPath::field("records")));
+
+    assert_eq!(parent.parent(), Some(ResourceView::Root));
+    assert_eq!(ResourceView::Root.parent(), None);
+}
+
+#[test]
+fn empty_schema_path_canonicalises_to_root() {
+    assert_eq!(
+        ResourceView::Path(SchemaPath::root()).canonical(),
+        ResourceView::Root
     );
 }

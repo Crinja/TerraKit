@@ -3,8 +3,9 @@ mod common;
 use common::{capability_id, capability_registry, hydraulic_schema, resource_type_id};
 use terrakit_core::resource::{
     CapabilityBinding, CapabilityRegistry, MetadataKind, MetadataRequirement,
-    ResourceCapabilityDefinition, ResourceTypeDefinition, ResourceTypeError,
-    ResourceTypeRegistry, ResourceTypeRegistryError, ResourceView, Schema, SchemaPath,
+    MetadataValidationError, MetadataValue, ResourceCapabilityDefinition, ResourceMetadata,
+    ResourceTypeDefinition, ResourceTypeError, ResourceTypeRegistry, ResourceTypeRegistryError,
+    ResourceView, Schema, SchemaField, SchemaPath,
 };
 
 #[test]
@@ -120,13 +121,8 @@ fn resource_type_registry_iteration_is_deterministic() {
     for id in ["domain.zeta@1", "domain.alpha@1", "domain.middle@1"] {
         types
             .register(
-                ResourceTypeDefinition::new(
-                    resource_type_id(id),
-                    Schema::f32(),
-                    vec![],
-                    &registry,
-                )
-                .unwrap(),
+                ResourceTypeDefinition::new(resource_type_id(id), Schema::f32(), vec![], &registry)
+                    .unwrap(),
             )
             .unwrap();
     }
@@ -138,11 +134,7 @@ fn resource_type_registry_iteration_is_deterministic() {
 
     assert_eq!(
         ids,
-        vec![
-            "domain.alpha@1",
-            "domain.middle@1",
-            "domain.zeta@1",
-        ]
+        vec!["domain.alpha@1", "domain.middle@1", "domain.zeta@1",]
     );
 }
 
@@ -171,10 +163,7 @@ fn resource_type_rejects_conflicting_capability_metadata_requirements() {
             ResourceCapabilityDefinition::new(
                 second.clone(),
                 Schema::f32(),
-                vec![MetadataRequirement::optional(
-                    "units",
-                    MetadataKind::String,
-                )],
+                vec![MetadataRequirement::optional("units", MetadataKind::String)],
             )
             .unwrap(),
         )
@@ -191,6 +180,7 @@ fn resource_type_rejects_conflicting_capability_metadata_requirements() {
             &registry,
         ),
         Err(ResourceTypeError::ConflictingMetadataRequirement {
+            scope: ResourceView::Root,
             key: "units".into(),
             existing: MetadataKind::Identifier,
             incoming: MetadataKind::String,
@@ -243,11 +233,146 @@ fn resource_type_merges_compatible_capability_metadata_requirements() {
     )
     .unwrap();
 
+    assert_eq!(definition.metadata_requirements().len(), 1);
+
     assert_eq!(
-        definition.metadata_requirements(),
-        &[MetadataRequirement::required(
-            "coordinate-space",
-            MetadataKind::Identifier,
-        )]
+        definition.metadata_requirements()[0].scope(),
+        &ResourceView::Root
     );
+
+    assert_eq!(
+        definition.metadata_requirements()[0].requirement(),
+        &MetadataRequirement::required("coordinate-space", MetadataKind::Identifier,)
+    );
+}
+
+#[test]
+fn resource_type_allows_different_metadata_kinds_at_parent_and_child_scopes() {
+    let root_capability = capability_id("domain.root@1");
+    let child_capability = capability_id("domain.child@1");
+
+    let schema =
+        Schema::structure(vec![SchemaField::new("value", Schema::f32()).unwrap()]).unwrap();
+
+    let child = ResourceView::Path(SchemaPath::field("value"));
+
+    let mut registry = CapabilityRegistry::new();
+
+    registry
+        .register(
+            ResourceCapabilityDefinition::new(
+                root_capability.clone(),
+                schema.clone(),
+                vec![MetadataRequirement::required(
+                    "units",
+                    MetadataKind::Identifier,
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    registry
+        .register(
+            ResourceCapabilityDefinition::new(
+                child_capability.clone(),
+                Schema::f32(),
+                vec![MetadataRequirement::required("units", MetadataKind::String)],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    let definition = ResourceTypeDefinition::new(
+        resource_type_id("domain.test@1"),
+        schema,
+        vec![
+            CapabilityBinding::root(root_capability),
+            CapabilityBinding::view(child_capability, child.clone()),
+        ],
+        &registry,
+    )
+    .unwrap();
+
+    let mut metadata = ResourceMetadata::new();
+
+    metadata.insert_root("units", MetadataValue::Identifier("world-units".into()));
+
+    metadata.insert(child, "units", MetadataValue::String("child-units".into()));
+
+    assert_eq!(definition.validate_metadata(&metadata), Ok(()));
+}
+
+#[test]
+fn resource_type_rejects_invalid_runtime_metadata_scope() {
+    let registry = capability_registry();
+
+    let definition = ResourceTypeDefinition::new(
+        resource_type_id("domain.test@1"),
+        hydraulic_schema(),
+        vec![],
+        &registry,
+    )
+    .unwrap();
+
+    let invalid = ResourceView::Path(SchemaPath::field("missing"));
+
+    let mut metadata = ResourceMetadata::new();
+
+    metadata.insert(
+        invalid.clone(),
+        "units",
+        MetadataValue::Identifier("metres".into()),
+    );
+
+    assert!(matches!(
+        definition.validate_metadata(&metadata),
+        Err(MetadataValidationError::InvalidScope {
+            scope,
+            ..
+        }) if scope == invalid
+    ));
+}
+
+#[test]
+fn resource_type_metadata_requirement_can_be_satisfied_by_parent_scope() {
+    let capability = capability_id("domain.child@1");
+
+    let schema =
+        Schema::structure(vec![SchemaField::new("value", Schema::f32()).unwrap()]).unwrap();
+
+    let child = ResourceView::Path(SchemaPath::field("value"));
+
+    let mut registry = CapabilityRegistry::new();
+
+    registry
+        .register(
+            ResourceCapabilityDefinition::new(
+                capability.clone(),
+                Schema::f32(),
+                vec![MetadataRequirement::required(
+                    "coordinate-space",
+                    MetadataKind::Identifier,
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    let definition = ResourceTypeDefinition::new(
+        resource_type_id("domain.test@1"),
+        schema,
+        vec![CapabilityBinding::view(capability, child)],
+        &registry,
+    )
+    .unwrap();
+
+    let mut metadata = ResourceMetadata::new();
+
+    metadata.insert_root(
+        "coordinate-space",
+        MetadataValue::Identifier("world".into()),
+    );
+
+    assert_eq!(definition.validate_metadata(&metadata), Ok(()));
 }
