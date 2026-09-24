@@ -110,3 +110,37 @@ fn resource_type_registry_rejects_duplicate_ids() {
         Err(ResourceTypeRegistryError::DuplicateType(id))
     );
 }
+
+#[test]
+fn resource_type_registry_iteration_is_deterministic() {
+    let registry = capability_registry();
+    let mut types = ResourceTypeRegistry::new();
+
+    for id in ["domain.zeta@1", "domain.alpha@1", "domain.middle@1"] {
+        types
+            .register(
+                ResourceTypeDefinition::new(
+                    resource_type_id(id),
+                    Schema::f32(),
+                    vec![],
+                    &registry,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+
+    let ids: Vec<_> = types
+        .iter()
+        .map(|definition| definition.id().as_str())
+        .collect();
+
+    assert_eq!(
+        ids,
+        vec![
+            "domain.alpha@1",
+            "domain.middle@1",
+            "domain.zeta@1",
+        ]
+    );
+}

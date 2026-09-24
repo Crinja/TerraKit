@@ -61,3 +61,35 @@ fn capability_registry_rejects_duplicate_ids() {
         Err(CapabilityError::DuplicateCapability(id))
     );
 }
+
+#[test]
+fn capability_registry_iteration_is_deterministic() {
+    let mut registry = CapabilityRegistry::new();
+
+    for id in ["terrakit.zeta@1", "terrakit.alpha@1", "terrakit.middle@1"] {
+        registry
+            .register(
+                ResourceCapabilityDefinition::new(
+                    capability_id(id),
+                    Schema::f32(),
+                    vec![],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+
+    let ids: Vec<_> = registry
+        .iter()
+        .map(|definition| definition.id().as_str())
+        .collect();
+
+    assert_eq!(
+        ids,
+        vec![
+            "terrakit.alpha@1",
+            "terrakit.middle@1",
+            "terrakit.zeta@1",
+        ]
+    );
+}
