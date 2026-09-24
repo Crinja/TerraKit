@@ -2,7 +2,8 @@ mod common;
 
 use common::{capability_id, capability_registry, hydraulic_schema, resource_type_id};
 use terrakit_core::resource::{
-    CapabilityBinding, ResourceTypeDefinition, ResourceView, SchemaPath,
+    CapabilityBinding, MetadataKind, MetadataValidationError, MetadataValue, ResourceMetadata,
+    ResourceTypeDefinition, ResourceView, SchemaPath,
 };
 
 #[test]
@@ -40,5 +41,27 @@ fn resource_type_can_advertise_specialised_and_generic_capabilities() {
             .unwrap()
             .resource_view(),
         &ResourceView::Path(SchemaPath::field("flow"))
+    );
+
+    let metadata = ResourceMetadata::new();
+
+    assert_eq!(
+        definition.validate_metadata(&metadata),
+        Err(MetadataValidationError::MissingRequired {
+            key: "coordinate-space".into(),
+            expected: MetadataKind::Identifier,
+        })
+    );
+
+    let mut metadata = ResourceMetadata::new();
+
+    metadata.insert(
+        "coordinate-space",
+        MetadataValue::Identifier("world".into()),
+    );
+
+    assert_eq!(
+        definition.validate_metadata(&metadata),
+        Ok(())
     );
 }

@@ -2,7 +2,8 @@ mod common;
 
 use common::{capability_id, capability_registry, hydraulic_schema, resource_type_id};
 use terrakit_core::resource::{
-    CapabilityBinding, CapabilityRegistry, ResourceTypeDefinition, ResourceTypeError,
+    CapabilityBinding, CapabilityRegistry, MetadataKind, MetadataRequirement,
+    ResourceCapabilityDefinition, ResourceTypeDefinition, ResourceTypeError,
     ResourceTypeRegistry, ResourceTypeRegistryError, ResourceView, Schema, SchemaPath,
 };
 
@@ -142,5 +143,111 @@ fn resource_type_registry_iteration_is_deterministic() {
             "domain.middle@1",
             "domain.zeta@1",
         ]
+    );
+}
+
+#[test]
+fn resource_type_rejects_conflicting_capability_metadata_requirements() {
+    let first = capability_id("domain.first@1");
+    let second = capability_id("domain.second@1");
+    let mut registry = CapabilityRegistry::new();
+
+    registry
+        .register(
+            ResourceCapabilityDefinition::new(
+                first.clone(),
+                Schema::f32(),
+                vec![MetadataRequirement::required(
+                    "units",
+                    MetadataKind::Identifier,
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    registry
+        .register(
+            ResourceCapabilityDefinition::new(
+                second.clone(),
+                Schema::f32(),
+                vec![MetadataRequirement::optional(
+                    "units",
+                    MetadataKind::String,
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        ResourceTypeDefinition::new(
+            resource_type_id("domain.test@1"),
+            Schema::f32(),
+            vec![
+                CapabilityBinding::root(first),
+                CapabilityBinding::root(second),
+            ],
+            &registry,
+        ),
+        Err(ResourceTypeError::ConflictingMetadataRequirement {
+            key: "units".into(),
+            existing: MetadataKind::Identifier,
+            incoming: MetadataKind::String,
+        })
+    );
+}
+
+#[test]
+fn resource_type_merges_compatible_capability_metadata_requirements() {
+    let first = capability_id("domain.first@1");
+    let second = capability_id("domain.second@1");
+    let mut registry = CapabilityRegistry::new();
+
+    registry
+        .register(
+            ResourceCapabilityDefinition::new(
+                first.clone(),
+                Schema::f32(),
+                vec![MetadataRequirement::optional(
+                    "coordinate-space",
+                    MetadataKind::Identifier,
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    registry
+        .register(
+            ResourceCapabilityDefinition::new(
+                second.clone(),
+                Schema::f32(),
+                vec![MetadataRequirement::required(
+                    "coordinate-space",
+                    MetadataKind::Identifier,
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    let definition = ResourceTypeDefinition::new(
+        resource_type_id("domain.test@1"),
+        Schema::f32(),
+        vec![
+            CapabilityBinding::root(first),
+            CapabilityBinding::root(second),
+        ],
+        &registry,
+    )
+    .unwrap();
+
+    assert_eq!(
+        definition.metadata_requirements(),
+        &[MetadataRequirement::required(
+            "coordinate-space",
+            MetadataKind::Identifier,
+        )]
     );
 }
