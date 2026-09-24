@@ -3,7 +3,7 @@
 //! Capabilities are named, versioned interpretation whose exposed view satisifies a schema.
 //! A resource may advertise any amount of capabilities
 
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{btree_map::Entry, BTreeMap, HashSet};
 use std::fmt;
 
 use super::{
@@ -106,7 +106,7 @@ impl CapabilityBinding {
 /// It does not decide which capability a consumer should use.
 #[derive(Debug, Clone, Default)]
 pub struct CapabilityRegistry {
-    definitions: HashMap<ResourceCapabilityId, ResourceCapabilityDefinition>,
+    definitions: BTreeMap<ResourceCapabilityId, ResourceCapabilityDefinition>,
 }
 
 impl CapabilityRegistry {
