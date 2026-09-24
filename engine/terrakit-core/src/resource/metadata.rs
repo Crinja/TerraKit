@@ -1,6 +1,7 @@
 //! Resource metadata contracts
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 /// Primitive metadata value kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -91,6 +92,34 @@ impl ResourceMetadata {
         self.entries.contains_key(key)
     }
 
+    /// Validates metadata against a set of requirements.
+    pub fn validate(
+        &self,
+        requirements: &[MetadataRequirement],
+    ) -> Result<(), MetadataValidationError> {
+        for requirement in requirements {
+            match self.get(requirement.key()) {
+                Some(value) if value.kind() != requirement.kind() => {
+                    return Err(MetadataValidationError::KindMismatch {
+                        key: requirement.key().into(),
+                        expected: requirement.kind(),
+                        actual: value.kind(),
+                    });
+                }
+                Some(_) => {}
+                None if requirement.is_required() => {
+                    return Err(MetadataValidationError::MissingRequired {
+                        key: requirement.key().into(),
+                        expected: requirement.kind(),
+                    });
+                }
+                None => {}
+            }
+        }
+
+        Ok(())
+    }
+
     /// Iterates over all metadata entries.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &MetadataValue)> {
         self.entries
@@ -145,3 +174,47 @@ impl MetadataValue {
         }
     }
 }
+
+/// Runtime metadata validation error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetadataValidationError {
+    /// A required metadata entry was not present.
+    MissingRequired {
+        /// Missing metadata key.
+        key: Box<str>,
+        /// Kind required by the contract.
+        expected: MetadataKind,
+    },
+    /// A metadata entry was present with the wrong kind.
+    KindMismatch {
+        /// Metadata key whose value had the wrong kind.
+        key: Box<str>,
+        /// Kind required by the contract.
+        expected: MetadataKind,
+        /// Kind provided by the resource instance.
+        actual: MetadataKind,
+    },
+}
+
+impl fmt::Display for MetadataValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingRequired { key, expected } => {
+                write!(
+                    f,
+                    "required metadata '{key}' with kind {expected:?} is missing"
+                )
+            }
+            Self::KindMismatch {
+                key,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "metadata '{key}' kind mismatch: expected {expected:?}, got {actual:?}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for MetadataValidationError {}
