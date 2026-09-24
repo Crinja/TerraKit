@@ -3,7 +3,7 @@
 //! Resource types are compositions of schema primatives
 //! These can be validated without core requireing unique domain knowledge
 
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{btree_map::Entry, BTreeMap, HashSet};
 use std::fmt;
 
 use super::{
@@ -101,7 +101,7 @@ impl ResourceTypeDefinition {
 /// Registry of concrete resource type definitions.
 #[derive(Debug, Clone, Default)]
 pub struct ResourceTypeRegistry {
-    definitions: HashMap<ResourceTypeId, ResourceTypeDefinition>,
+    definitions: BTreeMap<ResourceTypeId, ResourceTypeDefinition>,
 }
 
 impl ResourceTypeRegistry {
