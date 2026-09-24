@@ -13,45 +13,20 @@ mod schema;
 mod view;
 
 pub use capability::{
-    CapabilityBinding,
-    CapabilityError,
-    CapabilityRegistry,
-    ResourceCapabilityDefinition,
+    CapabilityBinding, CapabilityError, CapabilityRegistry, ResourceCapabilityDefinition,
 };
 
-pub use id::{
-    IdError,
-    ResourceCapabilityId,
-    ResourceId,
-    ResourceTypeId,
-};
+pub use id::{IdError, ResourceCapabilityId, ResourceId, ResourceTypeId};
 
 pub use metadata::{
-    MetadataKind,
-    MetadataRequirement,
-    MetadataValidationError,
-    MetadataValue,
-    ResourceMetadata,
+    MetadataKind, MetadataRequirement, MetadataValidationError, MetadataValue, ResourceMetadata,
+    ScopedMetadataRequirement,
 };
 
 pub use resource_type::{
-    ResourceTypeDefinition,
-    ResourceTypeError,
-    ResourceTypeRegistry,
-    ResourceTypeRegistryError,
+    ResourceTypeDefinition, ResourceTypeError, ResourceTypeRegistry, ResourceTypeRegistryError,
 };
 
-pub use schema::{
-    NumericType,
-    Schema,
-    SchemaError,
-    SchemaField,
-    SchemaVariant,
-};
+pub use schema::{NumericType, Schema, SchemaError, SchemaField, SchemaVariant};
 
-pub use view::{
-    ResourceView,
-    SchemaPath,
-    SchemaPathSegment,
-    ViewError,
-};
+pub use view::{ResourceView, SchemaPath, SchemaPathSegment, ViewError};
