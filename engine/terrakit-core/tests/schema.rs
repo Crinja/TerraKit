@@ -129,3 +129,57 @@ fn schema_names_are_opaque_utf8_labels() {
         Err(SchemaError::EmptyVariantName)
     );
 }
+
+#[test]
+fn schema_constructors_canonicalize_named_order() {
+    let structure = Schema::structure(vec![
+        SchemaField::new("zeta", Schema::u32()).unwrap(),
+        SchemaField::new("alpha", Schema::f32()).unwrap(),
+        SchemaField::new("middle", Schema::string()).unwrap(),
+    ])
+    .unwrap();
+
+    let Schema::Struct(fields) = structure else {
+        panic!("expected struct schema");
+    };
+
+    let names: Vec<_> = fields.iter().map(SchemaField::name).collect();
+    assert_eq!(names, vec!["alpha", "middle", "zeta"]);
+
+    let variant = Schema::variant(vec![
+        SchemaVariant::new("zeta", Schema::unit()).unwrap(),
+        SchemaVariant::new("alpha", Schema::unit()).unwrap(),
+        SchemaVariant::new("middle", Schema::unit()).unwrap(),
+    ])
+    .unwrap();
+
+    let Schema::Variant(variants) = variant else {
+        panic!("expected variant schema");
+    };
+
+    let names: Vec<_> = variants.iter().map(SchemaVariant::name).collect();
+    assert_eq!(names, vec!["alpha", "middle", "zeta"]);
+}
+
+#[test]
+fn schema_validation_rejects_noncanonical_named_order() {
+    let structure = Schema::Struct(vec![
+        SchemaField::new("zeta", Schema::f32()).unwrap(),
+        SchemaField::new("alpha", Schema::f32()).unwrap(),
+    ]);
+
+    assert_eq!(
+        structure.validate(),
+        Err(SchemaError::NonCanonicalFieldOrder)
+    );
+
+    let variant = Schema::Variant(vec![
+        SchemaVariant::new("zeta", Schema::unit()).unwrap(),
+        SchemaVariant::new("alpha", Schema::unit()).unwrap(),
+    ]);
+
+    assert_eq!(
+        variant.validate(),
+        Err(SchemaError::NonCanonicalVariantOrder)
+    );
+}

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use super::SchemaError;
 
 /// Numeric primitives supported by the schema.
@@ -289,12 +287,13 @@ impl Schema {
     /// Construct a heterogeneous structure from named fields.
     ///
     /// Field names are opaque UTF-8 labels and must be unique within the structure.
-    pub fn structure(fields: Vec<SchemaField>) -> Result<Self, SchemaError> {
-        let mut names = HashSet::with_capacity(fields.len());
+    /// Fields are stored in canonical name order.
+    pub fn structure(mut fields: Vec<SchemaField>) -> Result<Self, SchemaError> {
+        fields.sort_by(|left, right| left.name().cmp(right.name()));
 
-        for field in &fields {
-            if !names.insert(field.name()) {
-                return Err(SchemaError::DuplicateFieldName(field.name().into()));
+        for fields in fields.windows(2) {
+            if fields[0].name() == fields[1].name() {
+                return Err(SchemaError::DuplicateFieldName(fields[0].name().into()));
             }
         }
 
@@ -304,16 +303,17 @@ impl Schema {
     /// Construct a value containing one of multiple possible schemas.
     ///
     /// Variant names are opaque UTF-8 labels and must be unique.
-    pub fn variant(variants: Vec<SchemaVariant>) -> Result<Self, SchemaError> {
+    /// Variants are stored in canonical name order.
+    pub fn variant(mut variants: Vec<SchemaVariant>) -> Result<Self, SchemaError> {
         if variants.is_empty() {
             return Err(SchemaError::EmptyVariant);
         }
 
-        let mut names = HashSet::with_capacity(variants.len());
+        variants.sort_by(|left, right| left.name().cmp(right.name()));
 
-        for variant in &variants {
-            if !names.insert(variant.name()) {
-                return Err(SchemaError::DuplicateVariantName(variant.name().into()));
+        for variants in variants.windows(2) {
+            if variants[0].name() == variants[1].name() {
+                return Err(SchemaError::DuplicateVariantName(variants[0].name().into()));
             }
         }
 

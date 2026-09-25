@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fmt;
 
 use super::{Schema, SchemaField, SchemaVariant};
@@ -25,17 +24,25 @@ impl Schema {
                 element.validate()
             }
             Self::Struct(fields) => {
-                let mut names = HashSet::with_capacity(fields.len());
-
                 for field in fields {
                     if field.name().is_empty() {
                         return Err(SchemaError::EmptyFieldName);
                     }
+                }
 
-                    if !names.insert(field.name()) {
-                        return Err(SchemaError::DuplicateFieldName(field.name().into()));
+                for fields in fields.windows(2) {
+                    match fields[0].name().cmp(fields[1].name()) {
+                        std::cmp::Ordering::Equal => {
+                            return Err(SchemaError::DuplicateFieldName(fields[0].name().into()));
+                        }
+                        std::cmp::Ordering::Greater => {
+                            return Err(SchemaError::NonCanonicalFieldOrder);
+                        }
+                        std::cmp::Ordering::Less => {}
                     }
+                }
 
+                for field in fields {
                     field.schema().validate()?;
                 }
 
@@ -46,17 +53,27 @@ impl Schema {
                     return Err(SchemaError::EmptyVariant);
                 }
 
-                let mut names = HashSet::with_capacity(variants.len());
-
                 for variant in variants {
                     if variant.name().is_empty() {
                         return Err(SchemaError::EmptyVariantName);
                     }
+                }
 
-                    if !names.insert(variant.name()) {
-                        return Err(SchemaError::DuplicateVariantName(variant.name().into()));
+                for variants in variants.windows(2) {
+                    match variants[0].name().cmp(variants[1].name()) {
+                        std::cmp::Ordering::Equal => {
+                            return Err(SchemaError::DuplicateVariantName(
+                                variants[0].name().into(),
+                            ));
+                        }
+                        std::cmp::Ordering::Greater => {
+                            return Err(SchemaError::NonCanonicalVariantOrder);
+                        }
+                        std::cmp::Ordering::Less => {}
                     }
+                }
 
+                for variant in variants {
                     variant.schema().validate()?;
                 }
 
@@ -121,8 +138,14 @@ pub enum SchemaError {
     /// Multiple fields used the same name.
     DuplicateFieldName(Box<str>),
 
+    /// Struct fields were not ordered canonically by name.
+    NonCanonicalFieldOrder,
+
     /// Variant name was empty.
     EmptyVariantName,
+
+    /// Variant cases were not ordered canonically by name.
+    NonCanonicalVariantOrder,
 
     /// Multiple variants used the same name.
     DuplicateVariantName(Box<str>),
@@ -148,12 +171,20 @@ impl fmt::Display for SchemaError {
                 write!(f, "duplicate schema field name '{name}'")
             }
 
+            Self::NonCanonicalFieldOrder => {
+                write!(f, "schema struct fields are not in canonical name order")
+            }
+
             Self::EmptyVariantName => {
                 write!(f, "schema variant name cannot be empty")
             }
 
             Self::DuplicateVariantName(name) => {
                 write!(f, "duplicate schema variant name '{name}'")
+            }
+
+            Self::NonCanonicalVariantOrder => {
+                write!(f, "schema variants are not in canonical name order")
             }
 
             Self::EmptyVariant => {
