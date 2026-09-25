@@ -4,6 +4,7 @@ use super::SchemaError;
 
 /// Numeric primitives supported by the schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum NumericType {
     /// Signed 8-bit integer.
     I8,
@@ -28,6 +29,8 @@ pub enum NumericType {
 }
 
 /// Named field in a structural schema.
+///
+/// Names are opaque non-empty UTF-8 labels. No normalization is performed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SchemaField {
     name: Box<str>,
@@ -39,7 +42,7 @@ impl SchemaField {
     pub fn new(name: impl Into<Box<str>>, schema: Schema) -> Result<Self, SchemaError> {
         let name = name.into();
 
-        if name.trim().is_empty() {
+        if name.is_empty() {
             return Err(SchemaError::EmptyFieldName);
         }
 
@@ -58,6 +61,8 @@ impl SchemaField {
 }
 
 /// Named case in a variant schema.
+///
+/// Names are opaque non-empty UTF-8 labels. No normalization is performed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SchemaVariant {
     name: Box<str>,
@@ -69,7 +74,7 @@ impl SchemaVariant {
     pub fn new(name: impl Into<Box<str>>, schema: Schema) -> Result<Self, SchemaError> {
         let name = name.into();
 
-        if name.trim().is_empty() {
+        if name.is_empty() {
             return Err(SchemaError::EmptyVariantName);
         }
 
@@ -91,6 +96,7 @@ impl SchemaVariant {
 ///
 /// This is **not** a runtime value and does not describe physical memory layout.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Schema {
     /// Boolean.
     Bool,
@@ -282,7 +288,7 @@ impl Schema {
 
     /// Construct a heterogeneous structure from named fields.
     ///
-    /// Field names must be unique within the structure.
+    /// Field names are opaque UTF-8 labels and must be unique within the structure.
     pub fn structure(fields: Vec<SchemaField>) -> Result<Self, SchemaError> {
         let mut names = HashSet::with_capacity(fields.len());
 
@@ -297,7 +303,7 @@ impl Schema {
 
     /// Construct a value containing one of multiple possible schemas.
     ///
-    /// Variant names must be unique.
+    /// Variant names are opaque UTF-8 labels and must be unique.
     pub fn variant(variants: Vec<SchemaVariant>) -> Result<Self, SchemaError> {
         if variants.is_empty() {
             return Err(SchemaError::EmptyVariant);

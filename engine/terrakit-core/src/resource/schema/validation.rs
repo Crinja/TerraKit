@@ -28,7 +28,7 @@ impl Schema {
                 let mut names = HashSet::with_capacity(fields.len());
 
                 for field in fields {
-                    if field.name().trim().is_empty() {
+                    if field.name().is_empty() {
                         return Err(SchemaError::EmptyFieldName);
                     }
 
@@ -49,7 +49,7 @@ impl Schema {
                 let mut names = HashSet::with_capacity(variants.len());
 
                 for variant in variants {
-                    if variant.name().trim().is_empty() {
+                    if variant.name().is_empty() {
                         return Err(SchemaError::EmptyVariantName);
                     }
 
@@ -113,6 +113,7 @@ impl Schema {
 
 /// Errors produced when constructing an invalid schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SchemaError {
     /// Field name was empty.
     EmptyFieldName,

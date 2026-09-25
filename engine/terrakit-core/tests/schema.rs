@@ -112,3 +112,20 @@ fn schema_introspection_returns_nested_structures() {
         Some(&Schema::string())
     );
 }
+
+#[test]
+fn schema_names_are_opaque_utf8_labels() {
+    let field = SchemaField::new(" flow ", Schema::f32()).unwrap();
+    let variant = SchemaVariant::new("🔥", Schema::unit()).unwrap();
+
+    assert_eq!(field.name(), " flow ");
+    assert_eq!(variant.name(), "🔥");
+    assert_eq!(
+        SchemaField::new("", Schema::f32()),
+        Err(SchemaError::EmptyFieldName)
+    );
+    assert_eq!(
+        SchemaVariant::new("", Schema::unit()),
+        Err(SchemaError::EmptyVariantName)
+    );
+}

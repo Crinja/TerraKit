@@ -2,6 +2,8 @@
 //!
 //! - ['ResourceId'] identifies a runtime value
 //! - ['ResourceTypeId'] / ['ResourceCapabilityId'] / ['MetadataKeyId'] idenifies versioned contracts
+//!
+//! Contract IDs use lowercase dot-separated names and a canonical decimal major version.
 
 use std::fmt;
 
@@ -65,35 +67,71 @@ impl MetadataKeyId {
 }
 
 fn validate_versioned_id(value: Box<str>) -> Result<Box<str>, IdError> {
-    let text = value.trim();
+    let text = value.as_ref();
+
+    if text.trim() != text {
+        return Err(IdError::SurroundingWhitespace);
+    }
+
     let Some((name, major)) = text.rsplit_once('@') else {
         return Err(IdError::MissingMajorVersion);
     };
 
-    if name.is_empty() || !name.contains('.') {
-        return Err(IdError::MissingNamespace);
+    if name.contains('@') {
+        return Err(IdError::InvalidQualifiedName);
     }
 
-    if major.is_empty() || major.parse::<u32>().is_err() {
+    let mut segments = name.split('.');
+    let Some(first) = segments.next() else {
+        return Err(IdError::MissingNamespace);
+    };
+    let Some(second) = segments.next() else {
+        return Err(IdError::MissingNamespace);
+    };
+
+    if !valid_name_segment(first)
+        || !valid_name_segment(second)
+        || segments.any(|segment| !valid_name_segment(segment))
+    {
+        return Err(IdError::InvalidQualifiedName);
+    }
+
+    if major.is_empty() || !major.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(IdError::InvalidMajorVersion);
     }
 
-    if text != value.as_ref() {
-        return Err(IdError::SurroundingWhitespace);
+    if major.len() > 1 && major.starts_with('0') {
+        return Err(IdError::NonCanonicalMajorVersion);
+    }
+
+    if major.parse::<u32>().is_err() {
+        return Err(IdError::InvalidMajorVersion);
     }
 
     Ok(value)
 }
 
+fn valid_name_segment(segment: &str) -> bool {
+    let mut bytes = segment.bytes();
+
+    matches!(bytes.next(), Some(b'a'..=b'z'))
+        && bytes.all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'-'))
+}
+
 /// Identifier validation error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum IdError {
     /// No `@major` suffix was provided.
     MissingMajorVersion,
     /// The qualified name had no namespace separator.
     MissingNamespace,
+    /// The qualified name was not canonical lowercase ASCII.
+    InvalidQualifiedName,
     /// The major version was not an unsigned integer.
     InvalidMajorVersion,
+    /// The major version contained leading zeroes.
+    NonCanonicalMajorVersion,
     /// IDs are canonical strings and may not contain outer whitespace.
     SurroundingWhitespace,
 }
@@ -103,7 +141,11 @@ impl fmt::Display for IdError {
         let message = match self {
             Self::MissingMajorVersion => "ID must end in @<major>",
             Self::MissingNamespace => "ID must include a namespace, e.g. terrakit.name@1",
+            Self::InvalidQualifiedName => {
+                "ID name must use lowercase ASCII segments separated by dots"
+            }
             Self::InvalidMajorVersion => "ID major version must be an unsigned integer",
+            Self::NonCanonicalMajorVersion => "ID major version must not contain leading zeroes",
             Self::SurroundingWhitespace => "ID must not contain surrounding whitespace",
         };
         f.write_str(message)

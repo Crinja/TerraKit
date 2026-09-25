@@ -4,6 +4,7 @@ use super::Schema;
 
 /// One navigation step within a structural schema.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum SchemaPathSegment {
     /// Select a named field from a struct.
     Field(Box<str>),
@@ -126,6 +127,7 @@ impl SchemaPath {
 
 /// Which logical part of a resource backs a capability.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum ResourceView {
     /// The complete resource schema satisfies the capability.
     Root,
@@ -170,6 +172,7 @@ impl ResourceView {
 
 /// Error resolving a resource view.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ViewError {
     /// A field path referenced a field not present at that point in the schema.
     UnknownField(Box<str>),
