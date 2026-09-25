@@ -114,6 +114,7 @@ impl Default for ResourceMetadata {
 
 /// Concrete metadata value.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum MetadataValue {
     /// Boolean metadata.
     Bool(bool),
@@ -145,6 +146,7 @@ impl MetadataValue {
 
 /// Runtime metadata validation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MetadataValidationError {
     /// Metadata was attached to a view not present in the resource schema.
     InvalidScope {

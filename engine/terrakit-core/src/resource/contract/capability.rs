@@ -127,6 +127,7 @@ impl CapabilityBinding {
 
 /// Capability registration/definition error.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CapabilityError {
     /// The capability schema itself was invalid.
     InvalidSchema(Box<str>),

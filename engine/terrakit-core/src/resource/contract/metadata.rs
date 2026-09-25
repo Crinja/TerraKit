@@ -4,6 +4,7 @@ use crate::resource::{MetadataKeyId, ResourceView};
 
 /// Primitive metadata value kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum MetadataKind {
     /// Boolean flag.
     Bool,
@@ -21,6 +22,7 @@ pub enum MetadataKind {
 
 /// Metadata scope inheritance behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum MetadataInheritance {
     /// Metadata must exist on the exact requested resource view.
     Exact,
