@@ -19,17 +19,37 @@ pub enum MetadataKind {
     Identifier,
 }
 
+/// Metadata scope inheritance behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MetadataInheritance {
+    /// Metadata must exist on the exact requested resource view.
+    Exact,
+    /// Metadata may resolve from the closest parent resource view.
+    Inherited,
+}
+
 /// Unresolved metadata key registration input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetadataKeySpec {
     id: MetadataKeyId,
     kind: MetadataKind,
+    inheritance: MetadataInheritance,
 }
 
 impl MetadataKeySpec {
     /// Creates a metadata key spec.
     pub fn new(id: MetadataKeyId, kind: MetadataKind) -> Self {
-        Self { id, kind }
+        Self {
+            id,
+            kind,
+            inheritance: MetadataInheritance::Exact,
+        }
+    }
+
+    /// Sets the metadata inheritance behaviour.
+    pub fn with_inheritance(mut self, inheritance: MetadataInheritance) -> Self {
+        self.inheritance = inheritance;
+        self
     }
 
     /// Returns the versioned metadata key ID.
@@ -42,8 +62,13 @@ impl MetadataKeySpec {
         self.kind
     }
 
-    pub(crate) fn into_parts(self) -> (MetadataKeyId, MetadataKind) {
-        (self.id, self.kind)
+    /// Returns the requested metadata inheritance behaviour.
+    pub const fn inheritance(&self) -> MetadataInheritance {
+        self.inheritance
+    }
+
+    pub(crate) fn into_parts(self) -> (MetadataKeyId, MetadataKind, MetadataInheritance) {
+        (self.id, self.kind, self.inheritance)
     }
 }
 
@@ -52,11 +77,20 @@ impl MetadataKeySpec {
 pub struct MetadataKeyDefinition {
     id: MetadataKeyId,
     kind: MetadataKind,
+    inheritance: MetadataInheritance,
 }
 
 impl MetadataKeyDefinition {
-    pub(crate) fn new(id: MetadataKeyId, kind: MetadataKind) -> Self {
-        Self { id, kind }
+    pub(crate) fn new(
+        id: MetadataKeyId,
+        kind: MetadataKind,
+        inheritance: MetadataInheritance,
+    ) -> Self {
+        Self {
+            id,
+            kind,
+            inheritance,
+        }
     }
 
     /// Returns the versioned metadata key ID.
@@ -67,6 +101,11 @@ impl MetadataKeyDefinition {
     /// Returns the value kind used by this metadata key.
     pub const fn kind(&self) -> MetadataKind {
         self.kind
+    }
+
+    /// Returns the metadata inheritance behaviour.
+    pub const fn inheritance(&self) -> MetadataInheritance {
+        self.inheritance
     }
 }
 
@@ -110,11 +149,20 @@ impl MetadataRequirement {
 pub struct ResolvedMetadataRequirement {
     requirement: MetadataRequirement,
     kind: MetadataKind,
+    inheritance: MetadataInheritance,
 }
 
 impl ResolvedMetadataRequirement {
-    pub(crate) fn new(requirement: MetadataRequirement, kind: MetadataKind) -> Self {
-        Self { requirement, kind }
+    pub(crate) fn new(
+        requirement: MetadataRequirement,
+        kind: MetadataKind,
+        inheritance: MetadataInheritance,
+    ) -> Self {
+        Self {
+            requirement,
+            kind,
+            inheritance,
+        }
     }
 
     /// Returns the metadata requirement.
@@ -125,6 +173,11 @@ impl ResolvedMetadataRequirement {
     /// Returns the metadata key.
     pub fn key(&self) -> &MetadataKeyId {
         self.requirement.key()
+    }
+
+    /// Returns the metadata inheritance behaviour resolved when registered.
+    pub const fn inheritance(&self) -> MetadataInheritance {
+        self.inheritance
     }
 
     /// Returns whether the metadata entry must be present.
@@ -147,10 +200,15 @@ pub struct ScopedMetadataRequirementSpec {
 
 impl ScopedMetadataRequirementSpec {
     /// Creates a metadata requirement for one resource view.
-    pub fn new(scope: ResourceView, requirement: MetadataRequirement) -> Self {
+    pub(crate) fn new(
+        scope: ResourceView,
+        requirement: MetadataRequirement,
+        kind: MetadataKind,
+        inheritance: MetadataInheritance,
+    ) -> Self {
         Self {
             scope: scope.canonical(),
-            requirement,
+            requirement: ResolvedMetadataRequirement::new(requirement, kind, inheritance),
         }
     }
 
@@ -167,6 +225,11 @@ impl ScopedMetadataRequirementSpec {
     /// Returns the metadata requirement.
     pub fn requirement(&self) -> &MetadataRequirement {
         &self.requirement
+    }
+
+    /// Returns the metadata inheritance behaviour.
+    pub const fn inheritance(&self) -> MetadataInheritance {
+        self.requirement.inheritance()
     }
 }
 
