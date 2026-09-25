@@ -3,8 +3,8 @@ mod common;
 use common::{hydraulic_schema, metadata_key_id, resource_registry, resource_type_id};
 use terrakit_core::resource::{
     CapabilityBinding, MetadataKind, MetadataValidationError, MetadataValue, ResourceDescriptor,
-    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceTypeSpec, ResourceView,
-    SchemaPath,
+    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourcePath, ResourceTypeSpec,
+    ResourceView,
 };
 
 fn hydraulic_registry() -> (
@@ -19,7 +19,7 @@ fn hydraulic_registry() -> (
             ResourceTypeSpec::new(resource_type.clone(), hydraulic_schema()).with_capability(
                 CapabilityBinding::view(
                     common::capability_id("terrakit.erosion-flow@1"),
-                    ResourceView::Path(SchemaPath::field("flow")),
+                    ResourceView::Path(ResourcePath::field("flow")),
                 ),
             ),
         )
@@ -32,7 +32,7 @@ fn hydraulic_registry() -> (
 fn resource_descriptor_accepts_valid_inherited_metadata() {
     let (registry, resource_type) = hydraulic_registry();
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
-    let flow = ResourceView::Path(SchemaPath::field("flow"));
+    let flow = ResourceView::Path(ResourcePath::field("flow"));
     let mut metadata = ResourceMetadata::new();
 
     metadata.insert_root(
@@ -58,7 +58,7 @@ fn resource_descriptor_accepts_valid_inherited_metadata() {
 fn resource_descriptor_rejects_missing_required_metadata() {
     let (registry, resource_type) = hydraulic_registry();
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
-    let flow = ResourceView::Path(SchemaPath::field("flow"));
+    let flow = ResourceView::Path(ResourcePath::field("flow"));
 
     assert_eq!(
         ResourceDescriptor::new(
@@ -127,7 +127,7 @@ fn resource_descriptor_rejects_invalid_metadata_scope() {
     let (registry, resource_type) = hydraulic_registry();
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let units = metadata_key_id("terrakit.units@1");
-    let invalid = ResourceView::Path(SchemaPath::field("missing"));
+    let invalid = ResourceView::Path(ResourcePath::field("missing"));
     let mut metadata = ResourceMetadata::new();
 
     metadata.insert_root(coordinate_space, MetadataValue::Identifier("world".into()));

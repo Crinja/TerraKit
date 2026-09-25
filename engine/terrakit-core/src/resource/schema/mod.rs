@@ -12,4 +12,6 @@ mod view;
 
 pub use types::{NumericType, Schema, SchemaField, SchemaVariant};
 pub use validation::SchemaError;
-pub use view::{ResourceView, SchemaPath, SchemaPathSegment, ViewError};
+pub use view::{
+    ResourcePath, ResourcePathSegment, ResourceView, SchemaPath, SchemaPathSegment, ViewError,
+};

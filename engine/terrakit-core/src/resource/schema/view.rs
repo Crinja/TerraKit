@@ -125,14 +125,93 @@ impl SchemaPath {
     }
 }
 
+/// One navigation step within an addressable resource path.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum ResourcePathSegment {
+    /// Select a named field from a struct.
+    Field(Box<str>),
+}
+
+/// Stable path from a resource root to an addressable subresource.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ResourcePath {
+    segments: Vec<ResourcePathSegment>,
+}
+
+impl ResourcePath {
+    /// Creates the root path.
+    pub const fn root() -> Self {
+        Self {
+            segments: Vec::new(),
+        }
+    }
+
+    /// Returns whether this path selects the resource root.
+    pub fn is_root(&self) -> bool {
+        self.segments.is_empty()
+    }
+
+    /// Returns the immediate parent path.
+    pub fn parent(&self) -> Option<Self> {
+        if self.segments.is_empty() {
+            return None;
+        }
+
+        let mut segments = self.segments.clone();
+        segments.pop();
+
+        Some(Self { segments })
+    }
+
+    /// Creates a path selecting one root field.
+    pub fn field(name: impl Into<Box<str>>) -> Self {
+        Self {
+            segments: vec![ResourcePathSegment::Field(name.into())],
+        }
+    }
+
+    /// Appends another field selection.
+    pub fn then_field(mut self, name: impl Into<Box<str>>) -> Self {
+        self.segments.push(ResourcePathSegment::Field(name.into()));
+        self
+    }
+
+    /// Returns the path segments.
+    pub fn segments(&self) -> &[ResourcePathSegment] {
+        &self.segments
+    }
+
+    /// Resolves this path against a root schema.
+    pub fn resolve<'a>(&self, root: &'a Schema) -> Result<&'a Schema, ViewError> {
+        let mut current = root;
+
+        for segment in &self.segments {
+            match segment {
+                ResourcePathSegment::Field(name) => {
+                    if !matches!(current, Schema::Struct(_)) {
+                        return Err(ViewError::FieldOnNonStruct);
+                    }
+
+                    current = current
+                        .field(name)
+                        .ok_or_else(|| ViewError::UnknownField(name.clone()))?;
+                }
+            }
+        }
+
+        Ok(current)
+    }
+}
+
 /// Which logical part of a resource backs a capability.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum ResourceView {
     /// The complete resource schema satisfies the capability.
     Root,
-    /// A nested path satisfies the capability.
-    Path(SchemaPath),
+    /// An addressable nested resource path satisfies the capability.
+    Path(ResourcePath),
 }
 
 impl ResourceView {

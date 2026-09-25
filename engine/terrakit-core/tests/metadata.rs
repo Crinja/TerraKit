@@ -3,20 +3,20 @@ mod common;
 use common::{metadata_key_id, resource_registry, resource_type_id};
 use terrakit_core::resource::{
     MetadataInheritance, MetadataKeySpec, MetadataKind, MetadataLookupError, MetadataValue,
-    ResourceDescriptor, ResourceId, ResourceMetadata, ResourceRegistry, ResourceRegistryError,
-    ResourceTypeSpec, ResourceView, Schema, SchemaField, SchemaPath,
+    ResourceDescriptor, ResourceId, ResourceMetadata, ResourcePath, ResourceRegistry,
+    ResourceRegistryError, ResourceTypeSpec, ResourceView, Schema, SchemaField,
 };
 
 fn flow_view() -> ResourceView {
-    ResourceView::Path(SchemaPath::field("flow"))
+    ResourceView::Path(ResourcePath::field("flow"))
 }
 
 fn flow_direction_view() -> ResourceView {
-    ResourceView::Path(SchemaPath::field("flow").then_field("direction"))
+    ResourceView::Path(ResourcePath::field("flow").then_field("direction"))
 }
 
 fn water_view() -> ResourceView {
-    ResourceView::Path(SchemaPath::field("water"))
+    ResourceView::Path(ResourcePath::field("water"))
 }
 
 fn metadata_descriptor(metadata: ResourceMetadata) -> (ResourceRegistry, ResourceDescriptor) {
@@ -226,7 +226,7 @@ fn effective_metadata_uses_each_keys_inheritance_policy() {
 #[test]
 fn metadata_lookup_rejects_nonexistent_views() {
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
-    let invalid = ResourceView::Path(SchemaPath::field("missing"));
+    let invalid = ResourceView::Path(ResourcePath::field("missing"));
     let mut metadata = ResourceMetadata::new();
 
     metadata.insert_root(

@@ -28,6 +28,6 @@ pub use instance::{
 pub use registry::{MetadataLookupError, ResourceRegistry, ResourceRegistryError};
 
 pub use schema::{
-    NumericType, ResourceView, Schema, SchemaError, SchemaField, SchemaPath, SchemaPathSegment,
-    SchemaVariant, ViewError,
+    NumericType, ResourcePath, ResourcePathSegment, ResourceView, Schema, SchemaError, SchemaField,
+    SchemaPath, SchemaPathSegment, SchemaVariant, ViewError,
 };

@@ -5,8 +5,8 @@ use common::{
 };
 use terrakit_core::resource::{
     CapabilityBinding, MetadataInheritance, MetadataRequirement, ResourceCapabilitySpec,
-    ResourceRegistry, ResourceRegistryError, ResourceTypeError, ResourceTypeSpec, ResourceView,
-    Schema, SchemaPath, ScopedMetadataRequirementSpec,
+    ResourcePath, ResourceRegistry, ResourceRegistryError, ResourceTypeError, ResourceTypeSpec,
+    ResourceView, Schema, ScopedMetadataRequirementSpec,
 };
 
 #[test]
@@ -33,11 +33,11 @@ fn resource_registry_rejects_duplicate_capability_binding() {
     let spec = ResourceTypeSpec::new(resource_type_id("domain.test@1"), hydraulic_schema())
         .with_capability(CapabilityBinding::view(
             erosion_flow.clone(),
-            ResourceView::Path(SchemaPath::field("flow")),
+            ResourceView::Path(ResourcePath::field("flow")),
         ))
         .with_capability(CapabilityBinding::view(
             erosion_flow.clone(),
-            ResourceView::Path(SchemaPath::field("flow")),
+            ResourceView::Path(ResourcePath::field("flow")),
         ));
 
     assert_eq!(
@@ -56,7 +56,7 @@ fn resource_registry_rejects_invalid_capability_view() {
     let spec = ResourceTypeSpec::new(resource_type_id("domain.test@1"), hydraulic_schema())
         .with_capability(CapabilityBinding::view(
             erosion_flow,
-            ResourceView::Path(SchemaPath::field("missing")),
+            ResourceView::Path(ResourcePath::field("missing")),
         ));
 
     assert!(matches!(
@@ -75,7 +75,7 @@ fn resource_registry_rejects_capability_schema_mismatch() {
     let spec = ResourceTypeSpec::new(resource_type_id("domain.test@1"), hydraulic_schema())
         .with_capability(CapabilityBinding::view(
             erosion_flow,
-            ResourceView::Path(SchemaPath::field("sediment")),
+            ResourceView::Path(ResourcePath::field("sediment")),
         ));
 
     assert!(matches!(
@@ -234,7 +234,7 @@ fn resource_registry_rejects_invalid_type_owned_metadata_view() {
 
     let spec = ResourceTypeSpec::new(resource_type_id("domain.test@1"), Schema::f32())
         .with_metadata(ScopedMetadataRequirementSpec::new(
-            ResourceView::Path(SchemaPath::field("missing")),
+            ResourceView::Path(ResourcePath::field("missing")),
             MetadataRequirement::required(units),
         ));
 

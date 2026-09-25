@@ -5,7 +5,7 @@ use common::{
 };
 use terrakit_core::resource::{
     CapabilityBinding, MetadataInheritance, MetadataKind, MetadataValue, ResourceDescriptor,
-    ResourceId, ResourceMetadata, ResourceTypeSpec, ResourceView, SchemaPath,
+    ResourceId, ResourceMetadata, ResourcePath, ResourceTypeSpec, ResourceView,
 };
 
 #[test]
@@ -17,7 +17,7 @@ fn resource_type_can_advertise_specialised_and_generic_capabilities() {
     let vector_field = capability_id("terrakit.vector-field-2d@1");
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let resource_type = resource_type_id("domain.hydraulic-erosion-result@1");
-    let flow = ResourceView::Path(SchemaPath::field("flow"));
+    let flow = ResourceView::Path(ResourcePath::field("flow"));
 
     registry
         .register_resource_type(
