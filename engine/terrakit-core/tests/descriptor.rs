@@ -3,7 +3,7 @@ mod common;
 use common::{hydraulic_schema, metadata_key_id, resource_registry, resource_type_id};
 use terrakit_core::resource::{
     CapabilityBinding, MetadataKind, MetadataValidationError, MetadataValue, ResourceDescriptor,
-    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceTypeDefinition, ResourceView,
+    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceTypeSpec, ResourceView,
     SchemaPath,
 };
 
@@ -16,15 +16,12 @@ fn hydraulic_registry() -> (
 
     registry
         .register_resource_type(
-            ResourceTypeDefinition::new(
-                resource_type.clone(),
-                hydraulic_schema(),
-                vec![CapabilityBinding::view(
+            ResourceTypeSpec::new(resource_type.clone(), hydraulic_schema()).with_capability(
+                CapabilityBinding::view(
                     common::capability_id("terrakit.erosion-flow@1"),
                     ResourceView::Path(SchemaPath::field("flow")),
-                )],
-            )
-            .unwrap(),
+                ),
+            ),
         )
         .unwrap();
 

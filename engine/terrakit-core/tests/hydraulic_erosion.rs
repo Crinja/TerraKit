@@ -5,7 +5,7 @@ use common::{
 };
 use terrakit_core::resource::{
     CapabilityBinding, MetadataKind, MetadataValue, ResourceDescriptor, ResourceId,
-    ResourceMetadata, ResourceTypeDefinition, ResourceView, SchemaPath,
+    ResourceMetadata, ResourceTypeSpec, ResourceView, SchemaPath,
 };
 
 #[test]
@@ -21,16 +21,10 @@ fn resource_type_can_advertise_specialised_and_generic_capabilities() {
 
     registry
         .register_resource_type(
-            ResourceTypeDefinition::new(
-                resource_type.clone(),
-                hydraulic_schema(),
-                vec![
-                    CapabilityBinding::root(hydraulic.clone()),
-                    CapabilityBinding::view(erosion_flow.clone(), flow.clone()),
-                    CapabilityBinding::view(vector_field.clone(), flow.clone()),
-                ],
-            )
-            .unwrap(),
+            ResourceTypeSpec::new(resource_type.clone(), hydraulic_schema())
+                .with_capability(CapabilityBinding::root(hydraulic.clone()))
+                .with_capability(CapabilityBinding::view(erosion_flow.clone(), flow.clone()))
+                .with_capability(CapabilityBinding::view(vector_field.clone(), flow.clone())),
         )
         .unwrap();
 

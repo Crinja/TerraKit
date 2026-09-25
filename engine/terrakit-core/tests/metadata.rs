@@ -2,7 +2,7 @@ mod common;
 
 use common::{metadata_key_id, resource_registry};
 use terrakit_core::resource::{
-    MetadataKeyDefinition, MetadataKind, MetadataValue, ResourceMetadata, ResourceRegistry,
+    MetadataKeySpec, MetadataKind, MetadataValue, ResourceMetadata, ResourceRegistry,
     ResourceRegistryError, ResourceView, SchemaPath,
 };
 
@@ -21,14 +21,17 @@ fn water_view() -> ResourceView {
 #[test]
 fn resource_registry_rejects_duplicate_metadata_key_ids() {
     let id = metadata_key_id("terrakit.units@1");
-    let definition = MetadataKeyDefinition::new(id.clone(), MetadataKind::Identifier);
+    let spec = MetadataKeySpec::new(id.clone(), MetadataKind::Identifier);
 
     let mut registry = ResourceRegistry::new();
-    registry.register_metadata_key(definition.clone()).unwrap();
+    registry.register_metadata_key(spec.clone()).unwrap();
 
-    assert_eq!(registry.metadata_key(&id), Some(&definition));
+    let definition = registry.metadata_key(&id).unwrap();
+    assert_eq!(definition.id(), &id);
+    assert_eq!(definition.kind(), MetadataKind::Identifier);
+
     assert_eq!(
-        registry.register_metadata_key(definition),
+        registry.register_metadata_key(spec),
         Err(ResourceRegistryError::DuplicateMetadataKey(id))
     );
 }
@@ -39,7 +42,7 @@ fn metadata_key_iteration_is_deterministic() {
 
     for id in ["terrakit.zeta@1", "terrakit.alpha@1", "terrakit.middle@1"] {
         registry
-            .register_metadata_key(MetadataKeyDefinition::new(
+            .register_metadata_key(MetadataKeySpec::new(
                 metadata_key_id(id),
                 MetadataKind::Identifier,
             ))

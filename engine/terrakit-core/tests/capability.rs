@@ -2,38 +2,44 @@ mod common;
 
 use common::{capability_id, metadata_key_id, resource_registry};
 use terrakit_core::resource::{
-    CapabilityError, MetadataRequirement, NumericType, ResourceCapabilityDefinition,
+    CapabilityError, MetadataRequirement, NumericType, ResourceCapabilitySpec, ResourceRegistry,
     ResourceRegistryError, Schema,
 };
 
 #[test]
-fn capability_definition_validates_schema_and_duplicate_requirements() {
+fn resource_registry_validates_capability_schema_and_duplicate_requirements() {
     let invalid_schema = Schema::Vector {
         element: NumericType::F32,
         lanes: 0,
     };
 
+    let mut registry = ResourceRegistry::new();
+
     assert!(matches!(
-        ResourceCapabilityDefinition::new(
+        registry.register_capability(ResourceCapabilitySpec::new(
             capability_id("terrakit.invalid@1"),
             invalid_schema,
-            vec![],
-        ),
-        Err(CapabilityError::InvalidSchema(_))
+        )),
+        Err(ResourceRegistryError::InvalidCapability(
+            CapabilityError::InvalidSchema(_)
+        ))
     ));
 
+    let mut registry = resource_registry();
     let units = metadata_key_id("terrakit.units@1");
 
     assert_eq!(
-        ResourceCapabilityDefinition::new(
-            capability_id("terrakit.duplicate-metadata@1"),
-            Schema::f32(),
-            vec![
-                MetadataRequirement::required(units.clone()),
-                MetadataRequirement::optional(units.clone()),
-            ],
+        registry.register_capability(
+            ResourceCapabilitySpec::new(
+                capability_id("terrakit.duplicate-metadata@1"),
+                Schema::f32(),
+            )
+            .with_metadata(MetadataRequirement::required(units.clone()))
+            .with_metadata(MetadataRequirement::optional(units.clone())),
         ),
-        Err(CapabilityError::DuplicateMetadataRequirement(units))
+        Err(ResourceRegistryError::InvalidCapability(
+            CapabilityError::DuplicateMetadataRequirement(units)
+        ))
     );
 }
 
@@ -43,15 +49,11 @@ fn resource_registry_rejects_capability_with_unknown_metadata_key() {
     let unknown = metadata_key_id("domain.unknown@1");
     let capability = capability_id("domain.unknown-metadata@1");
 
-    let definition = ResourceCapabilityDefinition::new(
-        capability.clone(),
-        Schema::f32(),
-        vec![MetadataRequirement::required(unknown.clone())],
-    )
-    .unwrap();
+    let spec = ResourceCapabilitySpec::new(capability.clone(), Schema::f32())
+        .with_metadata(MetadataRequirement::required(unknown.clone()));
 
     assert_eq!(
-        registry.register_capability(definition),
+        registry.register_capability(spec),
         Err(ResourceRegistryError::UnknownMetadataKey {
             capability,
             key: unknown,
@@ -63,14 +65,41 @@ fn resource_registry_rejects_capability_with_unknown_metadata_key() {
 fn resource_registry_rejects_duplicate_capability_ids() {
     let mut registry = resource_registry();
     let id = capability_id("terrakit.test@1");
-    let definition = ResourceCapabilityDefinition::new(id.clone(), Schema::f32(), vec![]).unwrap();
+    let spec = ResourceCapabilitySpec::new(id.clone(), Schema::f32());
 
-    registry.register_capability(definition.clone()).unwrap();
+    registry.register_capability(spec.clone()).unwrap();
 
-    assert_eq!(registry.capability(&id), Some(&definition));
+    let definition = registry.capability(&id).unwrap();
+    assert_eq!(definition.id(), &id);
+    assert_eq!(definition.view_schema(), &Schema::f32());
+
     assert_eq!(
-        registry.register_capability(definition),
+        registry.register_capability(spec),
         Err(ResourceRegistryError::DuplicateCapability(id))
+    );
+}
+
+#[test]
+fn capability_definition_freezes_metadata_kind() {
+    let mut registry = resource_registry();
+    let units = metadata_key_id("terrakit.units@1");
+    let id = capability_id("domain.units@1");
+
+    registry
+        .register_capability(
+            ResourceCapabilitySpec::new(id.clone(), Schema::f32())
+                .with_metadata(MetadataRequirement::required(units.clone())),
+        )
+        .unwrap();
+
+    let definition = registry.capability(&id).unwrap();
+    let requirement = &definition.metadata_requirements()[0];
+
+    assert_eq!(requirement.key(), &units);
+    assert!(requirement.is_required());
+    assert_eq!(
+        requirement.kind(),
+        terrakit_core::resource::MetadataKind::Identifier
     );
 }
 
@@ -80,10 +109,10 @@ fn capability_iteration_is_deterministic() {
 
     for id in ["domain.zeta@1", "domain.alpha@1", "domain.middle@1"] {
         registry
-            .register_capability(
-                ResourceCapabilityDefinition::new(capability_id(id), Schema::f32(), vec![])
-                    .unwrap(),
-            )
+            .register_capability(ResourceCapabilitySpec::new(
+                capability_id(id),
+                Schema::f32(),
+            ))
             .unwrap();
     }
 

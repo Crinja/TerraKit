@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
 use terrakit_core::resource::{
-    MetadataKeyDefinition, MetadataKeyId, MetadataKind, MetadataRequirement,
-    ResourceCapabilityDefinition, ResourceCapabilityId, ResourceRegistry, ResourceTypeId, Schema,
-    SchemaField,
+    MetadataKeyId, MetadataKeySpec, MetadataKind, MetadataRequirement, ResourceCapabilityId,
+    ResourceCapabilitySpec, ResourceRegistry, ResourceTypeId, Schema, SchemaField,
 };
 
 pub fn capability_id(value: &str) -> ResourceCapabilityId {
@@ -35,59 +34,50 @@ pub fn resource_registry() -> ResourceRegistry {
     let mut registry = ResourceRegistry::new();
 
     registry
-        .register_metadata_key(MetadataKeyDefinition::new(
+        .register_metadata_key(MetadataKeySpec::new(
             metadata_key_id("terrakit.coordinate-space@1"),
             MetadataKind::Identifier,
         ))
         .unwrap();
 
     registry
-        .register_metadata_key(MetadataKeyDefinition::new(
+        .register_metadata_key(MetadataKeySpec::new(
             metadata_key_id("terrakit.units@1"),
             MetadataKind::Identifier,
         ))
         .unwrap();
 
     registry
-        .register_metadata_key(MetadataKeyDefinition::new(
+        .register_metadata_key(MetadataKeySpec::new(
             metadata_key_id("terrakit.producer@1"),
             MetadataKind::String,
         ))
         .unwrap();
 
     registry
-        .register_capability(
-            ResourceCapabilityDefinition::new(
-                capability_id("domain.hydraulic-erosion@1"),
-                hydraulic_schema(),
-                vec![],
-            )
-            .unwrap(),
-        )
+        .register_capability(ResourceCapabilitySpec::new(
+            capability_id("domain.hydraulic-erosion@1"),
+            hydraulic_schema(),
+        ))
         .unwrap();
 
     registry
         .register_capability(
-            ResourceCapabilityDefinition::new(
+            ResourceCapabilitySpec::new(
                 capability_id("terrakit.erosion-flow@1"),
                 vector_field_schema(),
-                vec![MetadataRequirement::required(metadata_key_id(
-                    "terrakit.coordinate-space@1",
-                ))],
             )
-            .unwrap(),
+            .with_metadata(MetadataRequirement::required(metadata_key_id(
+                "terrakit.coordinate-space@1",
+            ))),
         )
         .unwrap();
 
     registry
-        .register_capability(
-            ResourceCapabilityDefinition::new(
-                capability_id("terrakit.vector-field-2d@1"),
-                vector_field_schema(),
-                vec![],
-            )
-            .unwrap(),
-        )
+        .register_capability(ResourceCapabilitySpec::new(
+            capability_id("terrakit.vector-field-2d@1"),
+            vector_field_schema(),
+        ))
         .unwrap();
 
     registry
