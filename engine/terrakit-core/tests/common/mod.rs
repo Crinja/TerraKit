@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
 use terrakit_core::resource::{
-    MetadataKeyId, MetadataKeySpec, MetadataKind, MetadataRequirement, ResourceCapabilityId,
-    ResourceCapabilitySpec, ResourceRegistry, ResourceTypeId, Schema, SchemaField,
+    MetadataInheritance, MetadataKeyId, MetadataKeySpec, MetadataKind, MetadataRequirement,
+    ResourceCapabilityId, ResourceCapabilitySpec, ResourceRegistry, ResourceTypeId, Schema,
+    SchemaField,
 };
 
 pub fn capability_id(value: &str) -> ResourceCapabilityId {
@@ -34,10 +35,13 @@ pub fn resource_registry() -> ResourceRegistry {
     let mut registry = ResourceRegistry::new();
 
     registry
-        .register_metadata_key(MetadataKeySpec::new(
-            metadata_key_id("terrakit.coordinate-space@1"),
-            MetadataKind::Identifier,
-        ))
+        .register_metadata_key(
+            MetadataKeySpec::new(
+                metadata_key_id("terrakit.coordinate-space@1"),
+                MetadataKind::Identifier,
+            )
+            .with_inheritance(MetadataInheritance::Inherited),
+        )
         .unwrap();
 
     registry

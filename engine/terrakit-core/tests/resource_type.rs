@@ -4,9 +4,9 @@ use common::{
     capability_id, hydraulic_schema, metadata_key_id, resource_registry, resource_type_id,
 };
 use terrakit_core::resource::{
-    CapabilityBinding, MetadataRequirement, ResourceCapabilitySpec, ResourceRegistry,
-    ResourceRegistryError, ResourceTypeError, ResourceTypeSpec, ResourceView, Schema, SchemaPath,
-    ScopedMetadataRequirementSpec,
+    CapabilityBinding, MetadataInheritance, MetadataRequirement, ResourceCapabilitySpec,
+    ResourceRegistry, ResourceRegistryError, ResourceTypeError, ResourceTypeSpec, ResourceView,
+    Schema, SchemaPath, ScopedMetadataRequirementSpec,
 };
 
 #[test]
@@ -171,6 +171,10 @@ fn resource_type_merges_compatible_capability_metadata_requirements() {
         definition.metadata_requirements()[0].kind(),
         terrakit_core::resource::MetadataKind::Identifier
     );
+    assert_eq!(
+        definition.metadata_requirements()[0].inheritance(),
+        MetadataInheritance::Inherited
+    );
 }
 
 #[test]
@@ -193,6 +197,10 @@ fn resource_type_can_require_metadata_without_a_capability() {
     assert_eq!(
         definition.metadata_requirements()[0].requirement(),
         &MetadataRequirement::required(units)
+    );
+    assert_eq!(
+        definition.metadata_requirements()[0].inheritance(),
+        MetadataInheritance::Exact
     );
 }
 

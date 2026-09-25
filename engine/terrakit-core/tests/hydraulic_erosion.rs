@@ -4,8 +4,8 @@ use common::{
     capability_id, hydraulic_schema, metadata_key_id, resource_registry, resource_type_id,
 };
 use terrakit_core::resource::{
-    CapabilityBinding, MetadataKind, MetadataValue, ResourceDescriptor, ResourceId,
-    ResourceMetadata, ResourceTypeSpec, ResourceView, SchemaPath,
+    CapabilityBinding, MetadataInheritance, MetadataKind, MetadataValue, ResourceDescriptor,
+    ResourceId, ResourceMetadata, ResourceTypeSpec, ResourceView, SchemaPath,
 };
 
 #[test]
@@ -50,6 +50,7 @@ fn resource_type_can_advertise_specialised_and_generic_capabilities() {
 
     assert_eq!(requirement.scope(), &flow);
     assert_eq!(requirement.kind(), MetadataKind::Identifier);
+    assert_eq!(requirement.inheritance(), MetadataInheritance::Inherited);
 
     let mut metadata = ResourceMetadata::new();
     metadata.insert_root(coordinate_space, MetadataValue::Identifier("world".into()));

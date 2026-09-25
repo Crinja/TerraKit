@@ -47,7 +47,7 @@ fn resource_descriptor_accepts_valid_inherited_metadata() {
     assert_eq!(descriptor.id(), &ResourceId(42));
     assert_eq!(descriptor.resource_type(), &resource_type);
     assert_eq!(
-        descriptor.metadata().get(&flow, &coordinate_space),
+        registry.metadata_value(descriptor.metadata(), &flow, &coordinate_space,),
         Some(&MetadataValue::Identifier("world".into()))
     );
 }

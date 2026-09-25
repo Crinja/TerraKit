@@ -2,8 +2,8 @@ mod common;
 
 use common::{capability_id, metadata_key_id, resource_registry};
 use terrakit_core::resource::{
-    CapabilityError, MetadataRequirement, NumericType, ResourceCapabilitySpec, ResourceRegistry,
-    ResourceRegistryError, Schema,
+    CapabilityError, MetadataInheritance, MetadataRequirement, NumericType, ResourceCapabilitySpec,
+    ResourceRegistry, ResourceRegistryError, Schema,
 };
 
 #[test]
@@ -80,7 +80,7 @@ fn resource_registry_rejects_duplicate_capability_ids() {
 }
 
 #[test]
-fn capability_definition_freezes_metadata_kind() {
+fn capability_definition_freezes_metadata_contract() {
     let mut registry = resource_registry();
     let units = metadata_key_id("terrakit.units@1");
     let id = capability_id("domain.units@1");
@@ -100,6 +100,20 @@ fn capability_definition_freezes_metadata_kind() {
     assert_eq!(
         requirement.kind(),
         terrakit_core::resource::MetadataKind::Identifier
+    );
+    assert_eq!(requirement.inheritance(), MetadataInheritance::Exact);
+}
+
+#[test]
+fn capability_definition_freezes_metadata_inheritance() {
+    let registry = resource_registry();
+    let capability = registry
+        .capability(&capability_id("terrakit.erosion-flow@1"))
+        .unwrap();
+
+    assert_eq!(
+        capability.metadata_requirements()[0].inheritance(),
+        MetadataInheritance::Inherited
     );
 }
 

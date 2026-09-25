@@ -2,8 +2,8 @@ mod common;
 
 use common::{metadata_key_id, resource_registry};
 use terrakit_core::resource::{
-    MetadataKeySpec, MetadataKind, MetadataValue, ResourceMetadata, ResourceRegistry,
-    ResourceRegistryError, ResourceView, SchemaPath,
+    MetadataInheritance, MetadataKeySpec, MetadataKind, MetadataValue, ResourceMetadata,
+    ResourceRegistry, ResourceRegistryError, ResourceView, SchemaPath,
 };
 
 fn flow_view() -> ResourceView {
@@ -29,6 +29,7 @@ fn resource_registry_rejects_duplicate_metadata_key_ids() {
     let definition = registry.metadata_key(&id).unwrap();
     assert_eq!(definition.id(), &id);
     assert_eq!(definition.kind(), MetadataKind::Identifier);
+    assert_eq!(definition.inheritance(), MetadataInheritance::Exact);
 
     assert_eq!(
         registry.register_metadata_key(spec),
@@ -61,7 +62,7 @@ fn metadata_key_iteration_is_deterministic() {
 }
 
 #[test]
-fn resource_metadata_reports_scoped_values_and_kinds() {
+fn resource_metadata_reports_explicit_scoped_values_and_kinds() {
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let units = metadata_key_id("terrakit.units@1");
     let flow = flow_view();
@@ -80,60 +81,80 @@ fn resource_metadata_reports_scoped_values_and_kinds() {
         MetadataValue::Identifier("metres-per-second".into()),
     );
 
-    assert!(metadata.contains(&flow, &coordinate_space));
     assert!(metadata.contains_exact(&flow, &units));
     assert!(!metadata.contains_exact(&flow, &coordinate_space));
     assert_eq!(metadata.len(), 2);
     assert_eq!(
-        metadata
-            .get(&flow, &coordinate_space)
-            .map(MetadataValue::kind),
+        metadata.get_exact(&flow, &units).map(MetadataValue::kind),
         Some(MetadataKind::Identifier)
     );
 }
 
 #[test]
-fn resource_metadata_inherits_from_the_closest_scope() {
-    let units = metadata_key_id("terrakit.units@1");
+fn inherited_metadata_resolves_from_the_closest_scope() {
+    let registry = resource_registry();
+    let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let flow = flow_view();
     let direction = flow_direction_view();
     let mut metadata = ResourceMetadata::new();
 
     metadata.insert_root(
-        units.clone(),
-        MetadataValue::Identifier("root-units".into()),
+        coordinate_space.clone(),
+        MetadataValue::Identifier("root".into()),
     );
 
     metadata.insert(
         flow.clone(),
-        units.clone(),
-        MetadataValue::Identifier("flow-units".into()),
+        coordinate_space.clone(),
+        MetadataValue::Identifier("flow".into()),
     );
 
     assert_eq!(
-        metadata.resolve(&direction, &units),
-        Some((flow, &MetadataValue::Identifier("flow-units".into()),))
+        registry.resolve_metadata(&metadata, &direction, &coordinate_space),
+        Some((flow, &MetadataValue::Identifier("flow".into()),))
     );
 }
 
 #[test]
-fn resource_metadata_does_not_inherit_from_siblings() {
+fn exact_metadata_does_not_inherit() {
+    let registry = resource_registry();
     let units = metadata_key_id("terrakit.units@1");
+    let flow = flow_view();
+    let mut metadata = ResourceMetadata::new();
+
+    metadata.insert_root(units.clone(), MetadataValue::Identifier("metres".into()));
+
+    assert_eq!(registry.metadata_value(&metadata, &flow, &units), None);
+
+    assert_eq!(
+        metadata.get_exact(&ResourceView::Root, &units),
+        Some(&MetadataValue::Identifier("metres".into()))
+    );
+}
+
+#[test]
+fn inherited_metadata_does_not_inherit_from_siblings() {
+    let registry = resource_registry();
+    let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let flow = flow_view();
     let water = water_view();
     let mut metadata = ResourceMetadata::new();
 
     metadata.insert(
         flow,
-        units.clone(),
-        MetadataValue::Identifier("metres-per-second".into()),
+        coordinate_space.clone(),
+        MetadataValue::Identifier("flow-space".into()),
     );
 
-    assert_eq!(metadata.get(&water, &units), None);
+    assert_eq!(
+        registry.metadata_value(&metadata, &water, &coordinate_space),
+        None
+    );
 }
 
 #[test]
-fn resource_metadata_effective_entries_use_closest_values() {
+fn effective_metadata_uses_each_keys_inheritance_policy() {
+    let registry = resource_registry();
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let units = metadata_key_id("terrakit.units@1");
     let flow = flow_view();
@@ -155,7 +176,7 @@ fn resource_metadata_effective_entries_use_closest_values() {
         MetadataValue::Identifier("flow-units".into()),
     );
 
-    let effective = metadata.effective_entries(&flow);
+    let effective = registry.effective_metadata(&metadata, &flow);
 
     assert_eq!(
         effective.get(&coordinate_space),
@@ -171,12 +192,20 @@ fn resource_metadata_effective_entries_use_closest_values() {
 #[test]
 fn existing_metadata_registry_contracts_are_unchanged() {
     let registry = resource_registry();
+    let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
     let units = metadata_key_id("terrakit.units@1");
 
     assert_eq!(
         registry
+            .metadata_key(&coordinate_space)
+            .map(|definition| definition.inheritance()),
+        Some(MetadataInheritance::Inherited)
+    );
+
+    assert_eq!(
+        registry
             .metadata_key(&units)
-            .map(|definition| definition.kind()),
-        Some(MetadataKind::Identifier)
+            .map(|definition| definition.inheritance()),
+        Some(MetadataInheritance::Exact)
     );
 }

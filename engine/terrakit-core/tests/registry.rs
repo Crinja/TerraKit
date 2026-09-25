@@ -2,19 +2,25 @@ mod common;
 
 use common::{capability_id, metadata_key_id, resource_type_id};
 use terrakit_core::resource::{
-    CapabilityBinding, MetadataKeySpec, MetadataKind, MetadataRequirement, MetadataValue,
-    ResourceCapabilitySpec, ResourceDescriptor, ResourceDescriptorError, ResourceId,
+    CapabilityBinding, MetadataInheritance, MetadataKeySpec, MetadataKind, MetadataRequirement,
+    MetadataValue, ResourceCapabilitySpec, ResourceDescriptor, ResourceDescriptorError, ResourceId,
     ResourceMetadata, ResourceRegistry, ResourceTypeSpec, Schema,
 };
 
-fn registry_with_coordinate_space(kind: MetadataKind, include_type: bool) -> ResourceRegistry {
+fn registry_with_coordinate_space(
+    kind: MetadataKind,
+    inheritance: MetadataInheritance,
+    include_type: bool,
+) -> ResourceRegistry {
     let key = metadata_key_id("terrakit.coordinate-space@1");
     let capability = capability_id("domain.value@1");
     let resource_type = resource_type_id("domain.value-resource@1");
     let mut registry = ResourceRegistry::new();
 
     registry
-        .register_metadata_key(MetadataKeySpec::new(key.clone(), kind))
+        .register_metadata_key(
+            MetadataKeySpec::new(key.clone(), kind).with_inheritance(inheritance),
+        )
         .unwrap();
 
     registry
@@ -38,7 +44,11 @@ fn registry_with_coordinate_space(kind: MetadataKind, include_type: bool) -> Res
 
 #[test]
 fn capability_definition_freezes_metadata_kind_from_its_registry() {
-    let registry = registry_with_coordinate_space(MetadataKind::Identifier, false);
+    let registry = registry_with_coordinate_space(
+        MetadataKind::Identifier,
+        MetadataInheritance::Inherited,
+        false,
+    );
     let capability = capability_id("domain.value@1");
     let definition = registry.capability(&capability).unwrap();
 
@@ -50,8 +60,54 @@ fn capability_definition_freezes_metadata_kind_from_its_registry() {
 }
 
 #[test]
-fn resource_type_freezes_metadata_kind_from_its_registry() {
-    let registry = registry_with_coordinate_space(MetadataKind::Identifier, true);
+fn capability_definition_freezes_metadata_inheritance_from_its_registry() {
+    let key = metadata_key_id("domain.context@1");
+    let capability = capability_id("domain.value@1");
+
+    let spec = ResourceCapabilitySpec::new(capability.clone(), Schema::f32())
+        .with_metadata(MetadataRequirement::required(key.clone()));
+
+    let mut registry_a = ResourceRegistry::new();
+    registry_a
+        .register_metadata_key(
+            MetadataKeySpec::new(key.clone(), MetadataKind::Identifier)
+                .with_inheritance(MetadataInheritance::Inherited),
+        )
+        .unwrap();
+    registry_a.register_capability(spec.clone()).unwrap();
+
+    let mut registry_b = ResourceRegistry::new();
+    registry_b
+        .register_metadata_key(MetadataKeySpec::new(key, MetadataKind::Identifier))
+        .unwrap();
+    registry_b.register_capability(spec).unwrap();
+
+    assert_eq!(
+        registry_a
+            .capability(&capability)
+            .unwrap()
+            .metadata_requirements()[0]
+            .inheritance(),
+        MetadataInheritance::Inherited
+    );
+
+    assert_eq!(
+        registry_b
+            .capability(&capability)
+            .unwrap()
+            .metadata_requirements()[0]
+            .inheritance(),
+        MetadataInheritance::Exact
+    );
+}
+
+#[test]
+fn resource_type_freezes_metadata_contract_from_its_registry() {
+    let registry = registry_with_coordinate_space(
+        MetadataKind::Identifier,
+        MetadataInheritance::Inherited,
+        true,
+    );
     let resource_type = resource_type_id("domain.value-resource@1");
     let definition = registry.resource_type(&resource_type).unwrap();
 
@@ -59,6 +115,10 @@ fn resource_type_freezes_metadata_kind_from_its_registry() {
     assert_eq!(
         definition.metadata_requirements()[0].kind(),
         MetadataKind::Identifier
+    );
+    assert_eq!(
+        definition.metadata_requirements()[0].inheritance(),
+        MetadataInheritance::Inherited
     );
 }
 
@@ -75,7 +135,10 @@ fn the_same_specs_are_resolved_against_each_destination_registry() {
 
     let mut registry_a = ResourceRegistry::new();
     registry_a
-        .register_metadata_key(MetadataKeySpec::new(key.clone(), MetadataKind::Identifier))
+        .register_metadata_key(
+            MetadataKeySpec::new(key.clone(), MetadataKind::Identifier)
+                .with_inheritance(MetadataInheritance::Inherited),
+        )
         .unwrap();
     registry_a
         .register_capability(capability_spec.clone())
@@ -93,28 +156,30 @@ fn the_same_specs_are_resolved_against_each_destination_registry() {
         .register_resource_type(resource_type_spec)
         .unwrap();
 
-    assert_eq!(
-        registry_a
-            .resource_type(&resource_type)
-            .unwrap()
-            .metadata_requirements()[0]
-            .kind(),
-        MetadataKind::Identifier
-    );
-    assert_eq!(
-        registry_b
-            .resource_type(&resource_type)
-            .unwrap()
-            .metadata_requirements()[0]
-            .kind(),
-        MetadataKind::String
-    );
+    let requirement_a = &registry_a
+        .resource_type(&resource_type)
+        .unwrap()
+        .metadata_requirements()[0];
+    let requirement_b = &registry_b
+        .resource_type(&resource_type)
+        .unwrap()
+        .metadata_requirements()[0];
+
+    assert_eq!(requirement_a.kind(), MetadataKind::Identifier);
+    assert_eq!(requirement_a.inheritance(), MetadataInheritance::Inherited);
+    assert_eq!(requirement_b.kind(), MetadataKind::String);
+    assert_eq!(requirement_b.inheritance(), MetadataInheritance::Exact);
 }
 
 #[test]
 fn descriptor_validation_uses_one_contract_universe() {
-    let registry_a = registry_with_coordinate_space(MetadataKind::Identifier, true);
-    let registry_b = registry_with_coordinate_space(MetadataKind::String, true);
+    let registry_a = registry_with_coordinate_space(
+        MetadataKind::Identifier,
+        MetadataInheritance::Inherited,
+        true,
+    );
+    let registry_b =
+        registry_with_coordinate_space(MetadataKind::String, MetadataInheritance::Exact, true);
     let resource_type = resource_type_id("domain.value-resource@1");
     let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
 
