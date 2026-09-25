@@ -1,7 +1,8 @@
-//! Identifers used by resource model/
+//! Identifiers used by the resource model.
 //!
 //! - ['ResourceId'] identifies a runtime value
-//! - ['ResourceTypeId'] / ['ResourceCapabilityId'] / ['MetadataKeyId'] idenifies versioned contracts
+//! - ['ResourceTypeId'] / ['ResourceCapabilityId'] / ['MetadataKeyId'] identify semantic contracts
+//! - ['StorageAccessId'] identifies an operational storage access contract
 //!
 //! Contract IDs use lowercase dot-separated names and a canonical decimal major version.
 
@@ -30,6 +31,13 @@ pub struct ResourceCapabilityId(Box<str>);
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MetadataKeyId(Box<str>);
 
+/// Versioned identifier for one storage access contract.
+///
+/// Access contracts are operational and do not affect resource semantics.
+/// For example `vendor.storage.native-view@1`.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StorageAccessId(Box<str>);
+
 impl ResourceTypeId {
     /// Creates a resource type ID.
     pub fn new(value: impl Into<Box<str>>) -> Result<Self, IdError> {
@@ -56,6 +64,18 @@ impl ResourceCapabilityId {
 
 impl MetadataKeyId {
     /// Creates a metadata key ID.
+    pub fn new(value: impl Into<Box<str>>) -> Result<Self, IdError> {
+        Ok(Self(validate_versioned_id(value.into())?))
+    }
+
+    /// Returns the original canonical spelling.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl StorageAccessId {
+    /// Creates a storage access ID.
     pub fn new(value: impl Into<Box<str>>) -> Result<Self, IdError> {
         Ok(Self(validate_versioned_id(value.into())?))
     }
@@ -178,6 +198,14 @@ impl fmt::Debug for MetadataKeyId {
     }
 }
 
+impl fmt::Debug for StorageAccessId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("StorageAccessId")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
 impl fmt::Display for ResourceTypeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
@@ -191,6 +219,12 @@ impl fmt::Display for ResourceCapabilityId {
 }
 
 impl fmt::Display for MetadataKeyId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl fmt::Display for StorageAccessId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }

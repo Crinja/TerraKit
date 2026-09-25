@@ -4,8 +4,8 @@ use common::{capability_id, metadata_key_id, resource_type_id};
 use terrakit_core::resource::{
     CapabilityBinding, MetadataInheritance, MetadataKeySpec, MetadataKind, MetadataLookupError,
     MetadataRequirement, MetadataValue, ResourceCapabilitySpec, ResourceDescriptor,
-    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceRegistry, ResourceTypeSpec,
-    ResourceView, Schema,
+    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceRegistry, ResourceRegistryError,
+    ResourceTypeSpec, ResourceView, Schema, StorageAccessId, StorageAccessSpec,
 };
 
 fn registry_with_coordinate_space(
@@ -234,4 +234,75 @@ fn metadata_lookup_rejects_descriptor_from_another_registry() {
         registry_b.metadata_value(&descriptor, &ResourceView::Root, &coordinate_space,),
         Err(MetadataLookupError::ForeignDescriptor)
     );
+}
+
+#[test]
+fn storage_access_spec_registers_as_authoritative_definition() {
+    let mut registry = ResourceRegistry::new();
+    let id = StorageAccessId::new("plugin.test.read@1").unwrap();
+
+    registry
+        .register_storage_access(StorageAccessSpec::new(id.clone()))
+        .unwrap();
+
+    let definition = registry.storage_access(&id).unwrap();
+    assert_eq!(definition.id(), &id);
+}
+
+#[test]
+fn duplicate_storage_access_ids_are_rejected() {
+    let mut registry = ResourceRegistry::new();
+    let id = StorageAccessId::new("plugin.test.read@1").unwrap();
+
+    registry
+        .register_storage_access(StorageAccessSpec::new(id.clone()))
+        .unwrap();
+
+    assert_eq!(
+        registry.register_storage_access(StorageAccessSpec::new(id.clone())),
+        Err(ResourceRegistryError::DuplicateStorageAccess(id)),
+    );
+}
+
+#[test]
+fn storage_access_enumeration_is_deterministic() {
+    let mut registry = ResourceRegistry::new();
+
+    for id in [
+        "plugin.test.zeta@1",
+        "plugin.test.alpha@1",
+        "plugin.test.middle@1",
+    ] {
+        registry
+            .register_storage_access(StorageAccessSpec::new(StorageAccessId::new(id).unwrap()))
+            .unwrap();
+    }
+
+    let ids: Vec<_> = registry
+        .storage_accesses()
+        .map(|definition| definition.id().as_str())
+        .collect();
+
+    assert_eq!(
+        ids,
+        vec![
+            "plugin.test.alpha@1",
+            "plugin.test.middle@1",
+            "plugin.test.zeta@1",
+        ]
+    );
+}
+
+#[test]
+fn storage_access_contracts_are_isolated_between_registry_universes() {
+    let id = StorageAccessId::new("plugin.test.read@1").unwrap();
+    let mut registry_a = ResourceRegistry::new();
+    let registry_b = ResourceRegistry::new();
+
+    registry_a
+        .register_storage_access(StorageAccessSpec::new(id.clone()))
+        .unwrap();
+
+    assert!(registry_a.storage_access(&id).is_some());
+    assert!(registry_b.storage_access(&id).is_none());
 }

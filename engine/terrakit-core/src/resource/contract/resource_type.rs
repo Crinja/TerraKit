@@ -5,7 +5,10 @@
 
 use std::fmt;
 
-use crate::resource::{MetadataKeyId, ResourceCapabilityId, ResourceTypeId, ResourceView, Schema};
+use crate::resource::{
+    MetadataKeyId, ResourceCapabilityId, ResourceTypeId, ResourceView, Schema, SchemaError,
+    ViewError,
+};
 
 use super::capability::CapabilityBinding;
 use super::metadata::{ScopedMetadataRequirement, ScopedMetadataRequirementSpec};
@@ -138,7 +141,7 @@ impl ResourceTypeDefinition {
 #[non_exhaustive]
 pub enum ResourceTypeError {
     /// The resource's own schema was invalid.
-    InvalidSchema(Box<str>),
+    InvalidSchema(SchemaError),
     /// A claimed capability was not registered.
     UnknownCapability(ResourceCapabilityId),
     /// A resource type metadata requirement references an unknown key.
@@ -161,15 +164,15 @@ pub enum ResourceTypeError {
     InvalidView {
         /// Capability whose view failed.
         capability: ResourceCapabilityId,
-        /// Human-readable view-resolution error.
-        message: Box<str>,
+        /// Typed view-resolution error.
+        error: ViewError,
     },
     /// A resource type metadata scope did not exist in the resource schema.
     InvalidMetadataView {
         /// Metadata key whose scope failed.
         key: MetadataKeyId,
-        /// Human-readable view-resolution error.
-        message: Box<str>,
+        /// Typed view-resolution error.
+        error: ViewError,
     },
     /// The resolved view exists but does not satisfy the capability schema.
     CapabilitySchemaMismatch {
@@ -185,7 +188,7 @@ pub enum ResourceTypeError {
 impl fmt::Display for ResourceTypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidSchema(message) => write!(f, "invalid resource schema: {message}"),
+            Self::InvalidSchema(error) => write!(f, "invalid resource schema: {error}"),
             Self::UnknownCapability(id) => write!(f, "unknown capability '{id}'"),
             Self::UnknownMetadataKey { scope, key } => write!(
                 f,
@@ -198,15 +201,11 @@ impl fmt::Display for ResourceTypeError {
                 f,
                 "metadata requirement '{key}' is declared more than once on scope {scope:?}"
             ),
-            Self::InvalidView {
-                capability,
-                message,
-            } => write!(f, "invalid view for capability '{capability}': {message}"),
-            Self::InvalidMetadataView { key, message } => {
-                write!(
-                    f,
-                    "invalid view for metadata requirement '{key}': {message}"
-                )
+            Self::InvalidView { capability, error } => {
+                write!(f, "invalid view for capability '{capability}': {error}")
+            }
+            Self::InvalidMetadataView { key, error } => {
+                write!(f, "invalid view for metadata requirement '{key}': {error}")
             }
             Self::CapabilitySchemaMismatch {
                 capability,
@@ -220,4 +219,14 @@ impl fmt::Display for ResourceTypeError {
     }
 }
 
-impl std::error::Error for ResourceTypeError {}
+impl std::error::Error for ResourceTypeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidSchema(error) => Some(error),
+            Self::InvalidView { error, .. } | Self::InvalidMetadataView { error, .. } => {
+                Some(error)
+            }
+            _ => None,
+        }
+    }
+}

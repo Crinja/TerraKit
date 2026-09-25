@@ -1,11 +1,13 @@
 //! Resource contract registry.
 //!
 //! All cross-contract validation is performed through this registry so
-//! metadata, capabilities and resource types belong to one contract universe.
+//! metadata, capabilities, resource types and storage access contracts belong
+//! to one contract universe.
 
 mod capability;
 mod metadata;
 mod resource_type;
+mod storage_access;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -14,11 +16,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use capability::CapabilityRegistry;
 use metadata::MetadataKeyRegistry;
 use resource_type::ResourceTypeRegistry;
+use storage_access::StorageAccessRegistry;
 
 use crate::resource::{
     CapabilityError, MetadataKeyDefinition, MetadataKeyId, MetadataValue,
     ResourceCapabilityDefinition, ResourceCapabilityId, ResourceDescriptor, ResourceTypeDefinition,
-    ResourceTypeError, ResourceTypeId, ResourceView,
+    ResourceTypeError, ResourceTypeId, ResourceView, StorageAccessDefinition, StorageAccessId,
+    ViewError,
 };
 
 static NEXT_RESOURCE_REGISTRY_ID: AtomicU64 = AtomicU64::new(1);
@@ -40,6 +44,7 @@ pub struct ResourceRegistry {
     metadata_keys: MetadataKeyRegistry,
     capabilities: CapabilityRegistry,
     resource_types: ResourceTypeRegistry,
+    storage_accesses: StorageAccessRegistry,
 }
 
 impl ResourceRegistry {
@@ -50,6 +55,7 @@ impl ResourceRegistry {
             metadata_keys: MetadataKeyRegistry::new(),
             capabilities: CapabilityRegistry::new(),
             resource_types: ResourceTypeRegistry::new(),
+            storage_accesses: StorageAccessRegistry::new(),
         }
     }
 
@@ -72,6 +78,11 @@ impl ResourceRegistry {
         self.resource_types.get(id)
     }
 
+    /// Returns one storage access definition by ID.
+    pub fn storage_access(&self, id: &StorageAccessId) -> Option<&StorageAccessDefinition> {
+        self.storage_accesses.get(id)
+    }
+
     /// Iterates over all registered metadata key definitions.
     pub fn metadata_keys(&self) -> impl Iterator<Item = &MetadataKeyDefinition> {
         self.metadata_keys.iter()
@@ -85,6 +96,11 @@ impl ResourceRegistry {
     /// Iterates over all registered resource type definitions.
     pub fn resource_types(&self) -> impl Iterator<Item = &ResourceTypeDefinition> {
         self.resource_types.iter()
+    }
+
+    /// Iterates over all registered storage access definitions.
+    pub fn storage_accesses(&self) -> impl Iterator<Item = &StorageAccessDefinition> {
+        self.storage_accesses.iter()
     }
 
     /// Resolves one metadata value for a validated resource descriptor.
@@ -163,7 +179,7 @@ impl ResourceRegistry {
             .resolve(definition.schema())
             .map_err(|error| MetadataLookupError::InvalidView {
                 view: scope.clone(),
-                message: error.to_string().into(),
+                error,
             })?;
 
         Ok(definition)
@@ -190,8 +206,8 @@ pub enum MetadataLookupError {
     InvalidView {
         /// Invalid resource view.
         view: ResourceView,
-        /// Human-readable view-resolution error.
-        message: Box<str>,
+        /// Typed view-resolution error.
+        error: ViewError,
     },
 }
 
@@ -210,14 +226,21 @@ impl fmt::Display for MetadataLookupError {
             Self::UnknownMetadataKey(id) => {
                 write!(f, "metadata key '{id}' is not registered")
             }
-            Self::InvalidView { view, message } => {
-                write!(f, "invalid metadata lookup view {view:?}: {message}")
+            Self::InvalidView { view, error } => {
+                write!(f, "invalid metadata lookup view {view:?}: {error}")
             }
         }
     }
 }
 
-impl std::error::Error for MetadataLookupError {}
+impl std::error::Error for MetadataLookupError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidView { error, .. } => Some(error),
+            _ => None,
+        }
+    }
+}
 
 /// Resource registry error.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,6 +252,8 @@ pub enum ResourceRegistryError {
     DuplicateCapability(ResourceCapabilityId),
     /// A resource type with the same stable ID is already registered.
     DuplicateResourceType(ResourceTypeId),
+    /// A storage access contract with the same stable ID is already registered.
+    DuplicateStorageAccess(StorageAccessId),
     /// A capability references a metadata key not registered in this registry.
     UnknownMetadataKey {
         /// Capability containing the requirement.
@@ -253,6 +278,9 @@ impl fmt::Display for ResourceRegistryError {
             }
             Self::DuplicateResourceType(id) => {
                 write!(f, "resource type '{id}' is already registered")
+            }
+            Self::DuplicateStorageAccess(id) => {
+                write!(f, "storage access contract '{id}' is already registered")
             }
             Self::UnknownMetadataKey { capability, key } => write!(
                 f,

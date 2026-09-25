@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use crate::resource::{ResourceCapabilityId, ResourceView, Schema};
+use crate::resource::{ResourceCapabilityId, ResourceView, Schema, SchemaError};
 
 use super::metadata::{MetadataRequirement, ResolvedMetadataRequirement};
 
@@ -130,7 +130,7 @@ impl CapabilityBinding {
 #[non_exhaustive]
 pub enum CapabilityError {
     /// The capability schema itself was invalid.
-    InvalidSchema(Box<str>),
+    InvalidSchema(SchemaError),
     /// A capability ID was registered more than once.
     DuplicateCapability(ResourceCapabilityId),
     /// A metadata key was required more than once.
@@ -140,7 +140,7 @@ pub enum CapabilityError {
 impl fmt::Display for CapabilityError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidSchema(message) => write!(f, "invalid capability schema: {message}"),
+            Self::InvalidSchema(error) => write!(f, "invalid capability schema: {error}"),
             Self::DuplicateCapability(id) => write!(f, "capability '{id}' is already registered"),
             Self::DuplicateMetadataRequirement(id) => write!(
                 f,
@@ -150,4 +150,11 @@ impl fmt::Display for CapabilityError {
     }
 }
 
-impl std::error::Error for CapabilityError {}
+impl std::error::Error for CapabilityError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidSchema(error) => Some(error),
+            _ => None,
+        }
+    }
+}

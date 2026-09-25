@@ -95,9 +95,7 @@ impl ResourceRegistry {
         let (id, schema, mut capabilities, type_metadata) = spec.into_parts();
 
         schema.validate().map_err(|error| {
-            ResourceRegistryError::InvalidResourceType(ResourceTypeError::InvalidSchema(
-                error.to_string().into(),
-            ))
+            ResourceRegistryError::InvalidResourceType(ResourceTypeError::InvalidSchema(error))
         })?;
 
         let mut seen = HashSet::with_capacity(capabilities.len());
@@ -120,7 +118,7 @@ impl ResourceRegistry {
             scope.resolve(&schema).map_err(|error| {
                 ResourceRegistryError::InvalidResourceType(ResourceTypeError::InvalidMetadataView {
                     key: requirement.key().clone(),
-                    message: error.to_string().into(),
+                    error,
                 })
             })?;
 
@@ -156,7 +154,7 @@ impl ResourceRegistry {
             let actual = binding.resource_view().resolve(&schema).map_err(|error| {
                 ResourceRegistryError::InvalidResourceType(ResourceTypeError::InvalidView {
                     capability: binding.capability().clone(),
-                    message: error.to_string().into(),
+                    error,
                 })
             })?;
 
@@ -226,7 +224,7 @@ impl ResourceRegistry {
             scope.resolve(definition.schema()).map_err(|error| {
                 MetadataValidationError::InvalidScope {
                     scope: scope.clone(),
-                    message: error.to_string().into(),
+                    error,
                 }
             })?;
         }

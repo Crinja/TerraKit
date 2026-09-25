@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::resource::{MetadataInheritance, MetadataKeyId, MetadataKind, ResourceView};
+use crate::resource::{MetadataInheritance, MetadataKeyId, MetadataKind, ResourceView, ViewError};
 
 /// Runtime metadata values attached to one resource instance.
 #[derive(Debug, Clone, PartialEq)]
@@ -153,8 +153,8 @@ pub enum MetadataValidationError {
     InvalidScope {
         /// Invalid metadata scope.
         scope: ResourceView,
-        /// Human-readable view-resolution error.
-        message: Box<str>,
+        /// Typed view-resolution error.
+        error: ViewError,
     },
     /// Metadata used a key that has not been registered.
     UnknownMetadataKey {
@@ -188,8 +188,8 @@ pub enum MetadataValidationError {
 impl fmt::Display for MetadataValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidScope { scope, message } => {
-                write!(f, "invalid metadata scope {scope:?}: {message}")
+            Self::InvalidScope { scope, error } => {
+                write!(f, "invalid metadata scope {scope:?}: {error}")
             }
             Self::UnknownMetadataKey { scope, key } => {
                 write!(
@@ -218,4 +218,11 @@ impl fmt::Display for MetadataValidationError {
     }
 }
 
-impl std::error::Error for MetadataValidationError {}
+impl std::error::Error for MetadataValidationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidScope { error, .. } => Some(error),
+            _ => None,
+        }
+    }
+}

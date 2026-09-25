@@ -79,9 +79,7 @@ impl ResourceRegistry {
         let (id, view_schema, metadata) = spec.into_parts();
 
         view_schema.validate().map_err(|error| {
-            ResourceRegistryError::InvalidCapability(CapabilityError::InvalidSchema(
-                error.to_string().into(),
-            ))
+            ResourceRegistryError::InvalidCapability(CapabilityError::InvalidSchema(error))
         })?;
 
         let mut seen = HashSet::with_capacity(metadata.len());
