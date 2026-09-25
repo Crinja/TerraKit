@@ -62,11 +62,12 @@ impl ResourceMetadata {
                 return Some((current, value));
             }
 
-            if inheritance == MetadataInheritance::Exact {
-                return None;
+            match inheritance {
+                MetadataInheritance::Exact => return None,
+                MetadataInheritance::Inherited => {
+                    current = current.parent()?;
+                }
             }
-
-            current = current.parent()?;
         }
     }
 
