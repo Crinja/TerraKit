@@ -1,10 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::fmt;
 
-use crate::resource::{
-    MetadataInheritance, MetadataKeyDefinition, MetadataKeyId, MetadataKeySpec, MetadataValue,
-    ResourceMetadata, ResourceView,
-};
+use crate::resource::{MetadataKeyDefinition, MetadataKeyId, MetadataKeySpec};
 
 use super::{ResourceRegistry, ResourceRegistryError};
 
