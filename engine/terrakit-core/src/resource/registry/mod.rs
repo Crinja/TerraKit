@@ -7,6 +7,7 @@ mod capability;
 mod metadata;
 mod resource_type;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use capability::CapabilityRegistry;
@@ -14,8 +15,9 @@ use metadata::MetadataKeyRegistry;
 use resource_type::ResourceTypeRegistry;
 
 use crate::resource::{
-    CapabilityError, MetadataKeyDefinition, MetadataKeyId, ResourceCapabilityDefinition,
-    ResourceCapabilityId, ResourceTypeDefinition, ResourceTypeError, ResourceTypeId,
+    CapabilityError, MetadataKeyDefinition, MetadataKeyId, MetadataValue,
+    ResourceCapabilityDefinition, ResourceCapabilityId, ResourceMetadata, ResourceTypeDefinition,
+    ResourceTypeError, ResourceTypeId, ResourceView,
 };
 
 /// Registry of resource contracts.
