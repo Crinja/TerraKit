@@ -175,11 +175,6 @@ impl ResolvedMetadataRequirement {
         self.requirement.key()
     }
 
-    /// Returns the metadata inheritance behaviour resolved when registered.
-    pub const fn inheritance(&self) -> MetadataInheritance {
-        self.inheritance
-    }
-
     /// Returns whether the metadata entry must be present.
     pub const fn is_required(&self) -> bool {
         self.requirement.is_required()
@@ -188,6 +183,11 @@ impl ResolvedMetadataRequirement {
     /// Returns the metadata kind resolved when the contract was registered.
     pub const fn kind(&self) -> MetadataKind {
         self.kind
+    }
+
+    /// Returns the metadata inheritance behaviour resolved when registered.
+    pub const fn inheritance(&self) -> MetadataInheritance {
+        self.inheritance
     }
 }
 
@@ -200,15 +200,10 @@ pub struct ScopedMetadataRequirementSpec {
 
 impl ScopedMetadataRequirementSpec {
     /// Creates a metadata requirement for one resource view.
-    pub(crate) fn new(
-        scope: ResourceView,
-        requirement: MetadataRequirement,
-        kind: MetadataKind,
-        inheritance: MetadataInheritance,
-    ) -> Self {
+    pub fn new(scope: ResourceView, requirement: MetadataRequirement) -> Self {
         Self {
             scope: scope.canonical(),
-            requirement: ResolvedMetadataRequirement::new(requirement, kind, inheritance),
+            requirement,
         }
     }
 
@@ -226,11 +221,6 @@ impl ScopedMetadataRequirementSpec {
     pub fn requirement(&self) -> &MetadataRequirement {
         &self.requirement
     }
-
-    /// Returns the metadata inheritance behaviour.
-    pub const fn inheritance(&self) -> MetadataInheritance {
-        self.requirement.inheritance()
-    }
 }
 
 /// Metadata requirement attached to one resource view.
@@ -246,10 +236,11 @@ impl ScopedMetadataRequirement {
         scope: ResourceView,
         requirement: MetadataRequirement,
         kind: MetadataKind,
+        inheritance: MetadataInheritance,
     ) -> Self {
         Self {
             scope: scope.canonical(),
-            requirement: ResolvedMetadataRequirement::new(requirement, kind),
+            requirement: ResolvedMetadataRequirement::new(requirement, kind, inheritance),
         }
     }
 
@@ -271,5 +262,10 @@ impl ScopedMetadataRequirement {
     /// Returns the metadata kind resolved when the resource type was registered.
     pub const fn kind(&self) -> MetadataKind {
         self.requirement.kind()
+    }
+
+    /// Returns the metadata inheritance behaviour.
+    pub const fn inheritance(&self) -> MetadataInheritance {
+        self.requirement.inheritance()
     }
 }
