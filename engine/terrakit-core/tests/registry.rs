@@ -2,9 +2,10 @@ mod common;
 
 use common::{capability_id, metadata_key_id, resource_type_id};
 use terrakit_core::resource::{
-    CapabilityBinding, MetadataInheritance, MetadataKeySpec, MetadataKind, MetadataRequirement,
-    MetadataValue, ResourceCapabilitySpec, ResourceDescriptor, ResourceDescriptorError, ResourceId,
-    ResourceMetadata, ResourceRegistry, ResourceTypeSpec, Schema,
+    CapabilityBinding, MetadataInheritance, MetadataKeySpec, MetadataKind, MetadataLookupError,
+    MetadataRequirement, MetadataValue, ResourceCapabilitySpec, ResourceDescriptor,
+    ResourceDescriptorError, ResourceId, ResourceMetadata, ResourceRegistry, ResourceTypeSpec,
+    ResourceView, Schema,
 };
 
 fn registry_with_coordinate_space(
@@ -203,4 +204,34 @@ fn descriptor_validation_uses_one_contract_universe() {
         ResourceDescriptor::new(ResourceId(2), resource_type, string_metadata, &registry_a,),
         Err(ResourceDescriptorError::InvalidMetadata(_))
     ));
+}
+
+#[test]
+fn metadata_lookup_rejects_descriptor_from_another_registry() {
+    let registry_a = registry_with_coordinate_space(
+        MetadataKind::Identifier,
+        MetadataInheritance::Inherited,
+        true,
+    );
+    let registry_b = registry_with_coordinate_space(
+        MetadataKind::Identifier,
+        MetadataInheritance::Inherited,
+        true,
+    );
+    let resource_type = resource_type_id("domain.value-resource@1");
+    let coordinate_space = metadata_key_id("terrakit.coordinate-space@1");
+    let mut metadata = ResourceMetadata::new();
+
+    metadata.insert_root(
+        coordinate_space.clone(),
+        MetadataValue::Identifier("world".into()),
+    );
+
+    let descriptor =
+        ResourceDescriptor::new(ResourceId(3), resource_type, metadata, &registry_a).unwrap();
+
+    assert_eq!(
+        registry_b.metadata_value(&descriptor, &ResourceView::Root, &coordinate_space,),
+        Err(MetadataLookupError::ForeignDescriptor)
+    );
 }

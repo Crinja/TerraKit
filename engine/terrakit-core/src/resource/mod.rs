@@ -25,7 +25,7 @@ pub use instance::{
     ResourceMetadata,
 };
 
-pub use registry::{ResourceRegistry, ResourceRegistryError};
+pub use registry::{MetadataLookupError, ResourceRegistry, ResourceRegistryError};
 
 pub use schema::{
     NumericType, ResourceView, Schema, SchemaError, SchemaField, SchemaPath, SchemaPathSegment,

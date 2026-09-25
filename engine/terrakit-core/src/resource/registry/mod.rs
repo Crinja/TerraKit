@@ -9,6 +9,7 @@ mod resource_type;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use capability::CapabilityRegistry;
 use metadata::MetadataKeyRegistry;
@@ -16,13 +17,26 @@ use resource_type::ResourceTypeRegistry;
 
 use crate::resource::{
     CapabilityError, MetadataKeyDefinition, MetadataKeyId, MetadataValue,
-    ResourceCapabilityDefinition, ResourceCapabilityId, ResourceMetadata, ResourceTypeDefinition,
+    ResourceCapabilityDefinition, ResourceCapabilityId, ResourceDescriptor, ResourceTypeDefinition,
     ResourceTypeError, ResourceTypeId, ResourceView,
 };
 
+static NEXT_RESOURCE_REGISTRY_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Internal identity for one contract universe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ResourceRegistryId(u64);
+
+impl ResourceRegistryId {
+    fn next() -> Self {
+        Self(NEXT_RESOURCE_REGISTRY_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
 /// Registry of resource contracts.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub struct ResourceRegistry {
+    id: ResourceRegistryId,
     metadata_keys: MetadataKeyRegistry,
     capabilities: CapabilityRegistry,
     resource_types: ResourceTypeRegistry,
@@ -32,10 +46,15 @@ impl ResourceRegistry {
     /// Creates an empty resource registry.
     pub fn new() -> Self {
         Self {
+            id: ResourceRegistryId::next(),
             metadata_keys: MetadataKeyRegistry::new(),
             capabilities: CapabilityRegistry::new(),
             resource_types: ResourceTypeRegistry::new(),
         }
+    }
+
+    pub(crate) const fn id(&self) -> ResourceRegistryId {
+        self.id
     }
 
     /// Returns one metadata key definition by ID.
@@ -68,51 +87,141 @@ impl ResourceRegistry {
         self.resource_types.iter()
     }
 
-    /// Resolves one metadata value using the key's registered inheritance behaviour.
+    /// Resolves one metadata value for a validated resource descriptor.
     pub fn resolve_metadata<'a>(
         &self,
-        metadata: &'a ResourceMetadata,
+        descriptor: &'a ResourceDescriptor,
         scope: &ResourceView,
         key: &MetadataKeyId,
-    ) -> Option<(ResourceView, &'a MetadataValue)> {
-        let definition = self.metadata_keys.get(key)?;
+    ) -> Result<Option<(ResourceView, &'a MetadataValue)>, MetadataLookupError> {
+        self.validate_descriptor_view(descriptor, scope)?;
 
-        metadata.resolve(scope, key, definition.inheritance())
+        let definition = self
+            .metadata_keys
+            .get(key)
+            .ok_or_else(|| MetadataLookupError::UnknownMetadataKey(key.clone()))?;
+
+        Ok(descriptor
+            .metadata()
+            .resolve(scope, key, definition.inheritance()))
     }
 
-    /// Returns one effective metadata value.
+    /// Returns one effective metadata value for a validated resource descriptor.
     pub fn metadata_value<'a>(
         &self,
-        metadata: &'a ResourceMetadata,
+        descriptor: &'a ResourceDescriptor,
         scope: &ResourceView,
         key: &MetadataKeyId,
-    ) -> Option<&'a MetadataValue> {
-        self.resolve_metadata(metadata, scope, key)
-            .map(|(_, value)| value)
+    ) -> Result<Option<&'a MetadataValue>, MetadataLookupError> {
+        Ok(self
+            .resolve_metadata(descriptor, scope, key)?
+            .map(|(_, value)| value))
     }
 
     /// Returns all effective metadata for one resource view.
     pub fn effective_metadata<'a>(
         &self,
-        metadata: &'a ResourceMetadata,
+        descriptor: &'a ResourceDescriptor,
         scope: &ResourceView,
-    ) -> BTreeMap<&'a MetadataKeyId, &'a MetadataValue> {
-        let keys: BTreeSet<_> = metadata.iter().map(|(_, key, _)| key).collect();
+    ) -> Result<BTreeMap<&'a MetadataKeyId, &'a MetadataValue>, MetadataLookupError> {
+        self.validate_descriptor_view(descriptor, scope)?;
+
+        let keys: BTreeSet<_> = descriptor
+            .metadata()
+            .iter()
+            .map(|(_, key, _)| key)
+            .collect();
 
         let mut effective = BTreeMap::new();
 
         for key in keys {
-            if let Some(value) = self.metadata_value(metadata, scope, key) {
+            if let Some(value) = self.metadata_value(descriptor, scope, key)? {
                 effective.insert(key, value);
             }
         }
 
-        effective
+        Ok(effective)
+    }
+
+    fn validate_descriptor_view(
+        &self,
+        descriptor: &ResourceDescriptor,
+        scope: &ResourceView,
+    ) -> Result<&ResourceTypeDefinition, MetadataLookupError> {
+        if descriptor.registry_id() != self.id {
+            return Err(MetadataLookupError::ForeignDescriptor);
+        }
+
+        let definition = self
+            .resource_types
+            .get(descriptor.resource_type())
+            .ok_or_else(|| {
+                MetadataLookupError::UnknownResourceType(descriptor.resource_type().clone())
+            })?;
+
+        scope
+            .resolve(definition.schema())
+            .map_err(|error| MetadataLookupError::InvalidView {
+                view: scope.clone(),
+                message: error.to_string().into(),
+            })?;
+
+        Ok(definition)
     }
 }
 
+impl Default for ResourceRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Metadata lookup error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MetadataLookupError {
+    /// The descriptor was validated by another resource registry.
+    ForeignDescriptor,
+    /// The descriptor references a resource type unavailable in this registry.
+    UnknownResourceType(ResourceTypeId),
+    /// The requested metadata key is not registered.
+    UnknownMetadataKey(MetadataKeyId),
+    /// The requested resource view does not exist in the descriptor's schema.
+    InvalidView {
+        /// Invalid resource view.
+        view: ResourceView,
+        /// Human-readable view-resolution error.
+        message: Box<str>,
+    },
+}
+
+impl fmt::Display for MetadataLookupError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ForeignDescriptor => {
+                write!(f, "resource descriptor belongs to another registry")
+            }
+            Self::UnknownResourceType(id) => {
+                write!(
+                    f,
+                    "resource descriptor references unknown resource type '{id}'"
+                )
+            }
+            Self::UnknownMetadataKey(id) => {
+                write!(f, "metadata key '{id}' is not registered")
+            }
+            Self::InvalidView { view, message } => {
+                write!(f, "invalid metadata lookup view {view:?}: {message}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for MetadataLookupError {}
+
 /// Resource registry error.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ResourceRegistryError {
     /// A metadata key with the same stable ID is already registered.
     DuplicateMetadataKey(MetadataKeyId),
