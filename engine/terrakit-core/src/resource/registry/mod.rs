@@ -65,6 +65,48 @@ impl ResourceRegistry {
     pub fn resource_types(&self) -> impl Iterator<Item = &ResourceTypeDefinition> {
         self.resource_types.iter()
     }
+
+    /// Resolves one metadata value using the key's registered inheritance behaviour.
+    pub fn resolve_metadata<'a>(
+        &self,
+        metadata: &'a ResourceMetadata,
+        scope: &ResourceView,
+        key: &MetadataKeyId,
+    ) -> Option<(ResourceView, &'a MetadataValue)> {
+        let definition = self.metadata_keys.get(key)?;
+
+        metadata.resolve(scope, key, definition.inheritance())
+    }
+
+    /// Returns one effective metadata value.
+    pub fn metadata_value<'a>(
+        &self,
+        metadata: &'a ResourceMetadata,
+        scope: &ResourceView,
+        key: &MetadataKeyId,
+    ) -> Option<&'a MetadataValue> {
+        self.resolve_metadata(metadata, scope, key)
+            .map(|(_, value)| value)
+    }
+
+    /// Returns all effective metadata for one resource view.
+    pub fn effective_metadata<'a>(
+        &self,
+        metadata: &'a ResourceMetadata,
+        scope: &ResourceView,
+    ) -> BTreeMap<&'a MetadataKeyId, &'a MetadataValue> {
+        let keys: BTreeSet<_> = metadata.iter().map(|(_, key, _)| key).collect();
+
+        let mut effective = BTreeMap::new();
+
+        for key in keys {
+            if let Some(value) = self.metadata_value(metadata, scope, key) {
+                effective.insert(key, value);
+            }
+        }
+
+        effective
+    }
 }
 
 /// Resource registry error.

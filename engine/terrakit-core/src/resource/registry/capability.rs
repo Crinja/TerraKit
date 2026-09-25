@@ -104,6 +104,7 @@ impl ResourceRegistry {
             resolved.push(ResolvedMetadataRequirement::new(
                 requirement,
                 key_definition.kind(),
+                key_definition.inheritance(),
             ));
         }
 

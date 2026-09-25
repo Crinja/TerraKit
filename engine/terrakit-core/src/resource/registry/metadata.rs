@@ -1,7 +1,10 @@
-use std::collections::{BTreeMap, btree_map::Entry};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 use std::fmt;
 
-use crate::resource::{MetadataKeyDefinition, MetadataKeyId, MetadataKeySpec};
+use crate::resource::{
+    MetadataInheritance, MetadataKeyDefinition, MetadataKeyId, MetadataKeySpec, MetadataValue,
+    ResourceMetadata, ResourceView,
+};
 
 use super::{ResourceRegistry, ResourceRegistryError};
 
@@ -82,8 +85,8 @@ impl ResourceRegistry {
             ));
         }
 
-        let (id, kind) = spec.into_parts();
-        let definition = MetadataKeyDefinition::new(id, kind);
+        let (id, kind, inheritance) = spec.into_parts();
+        let definition = MetadataKeyDefinition::new(id, kind, inheritance);
 
         self.metadata_keys
             .register(definition)

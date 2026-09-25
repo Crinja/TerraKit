@@ -12,10 +12,10 @@ mod registry;
 mod schema;
 
 pub use contract::{
-    CapabilityBinding, CapabilityError, MetadataKeyDefinition, MetadataKeySpec, MetadataKind,
-    MetadataRequirement, ResolvedMetadataRequirement, ResourceCapabilityDefinition,
-    ResourceCapabilitySpec, ResourceTypeDefinition, ResourceTypeError, ResourceTypeSpec,
-    ScopedMetadataRequirement, ScopedMetadataRequirementSpec,
+    CapabilityBinding, CapabilityError, MetadataInheritance, MetadataKeyDefinition,
+    MetadataKeySpec, MetadataKind, MetadataRequirement, ResolvedMetadataRequirement,
+    ResourceCapabilityDefinition, ResourceCapabilitySpec, ResourceTypeDefinition,
+    ResourceTypeError, ResourceTypeSpec, ScopedMetadataRequirement, ScopedMetadataRequirementSpec,
 };
 
 pub use id::{IdError, MetadataKeyId, ResourceCapabilityId, ResourceId, ResourceTypeId};

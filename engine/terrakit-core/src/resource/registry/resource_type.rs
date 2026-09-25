@@ -2,15 +2,17 @@ use std::collections::{BTreeMap, HashSet, btree_map::Entry};
 use std::fmt;
 
 use crate::resource::{
-    MetadataKeyId, MetadataKind, MetadataRequirement, MetadataValidationError, ResourceMetadata,
-    ResourceTypeDefinition, ResourceTypeError, ResourceTypeId, ResourceTypeSpec, ResourceView,
-    ScopedMetadataRequirement,
+    MetadataInheritance, MetadataKeyId, MetadataKind, MetadataRequirement, MetadataValidationError,
+    ResourceMetadata, ResourceTypeDefinition, ResourceTypeError, ResourceTypeId, ResourceTypeSpec,
+    ResourceView, ScopedMetadataRequirement,
 };
 
 use super::{ResourceRegistry, ResourceRegistryError};
 
-type ResolvedMetadataMap =
-    BTreeMap<ResourceView, BTreeMap<MetadataKeyId, (MetadataRequirement, MetadataKind)>>;
+type ResolvedMetadataMap = BTreeMap<
+    ResourceView,
+    BTreeMap<MetadataKeyId, (MetadataRequirement, MetadataKind, MetadataInheritance)>,
+>;
 
 /// Registry of concrete resource type definitions.
 #[derive(Debug, Clone, Default)]
@@ -119,7 +121,13 @@ impl ResourceRegistry {
                 })
             })?;
 
-            merge_metadata_requirement(&mut metadata, scope, requirement, key_definition.kind());
+            merge_metadata_requirement(
+                &mut metadata,
+                scope,
+                requirement,
+                key_definition.kind(),
+                key_definition.inheritance(),
+            );
         }
 
         for binding in &capabilities {
@@ -160,6 +168,7 @@ impl ResourceRegistry {
                     scope.clone(),
                     requirement.requirement().clone(),
                     requirement.kind(),
+                    requirement.inheritance(),
                 );
             }
         }
@@ -167,9 +176,16 @@ impl ResourceRegistry {
         let metadata = metadata
             .into_iter()
             .flat_map(|(scope, requirements)| {
-                requirements.into_values().map(move |(requirement, kind)| {
-                    ScopedMetadataRequirement::new(scope.clone(), requirement, kind)
-                })
+                requirements
+                    .into_values()
+                    .map(move |(requirement, kind, inheritance)| {
+                        ScopedMetadataRequirement::new(
+                            scope.clone(),
+                            requirement,
+                            kind,
+                            inheritance,
+                        )
+                    })
             })
             .collect();
 
@@ -220,7 +236,7 @@ impl ResourceRegistry {
         for scoped in definition.metadata_requirements() {
             let requirement = scoped.requirement();
 
-            match metadata.resolve(scoped.scope(), requirement.key()) {
+            match metadata.resolve(scoped.scope(), requirement.key(), scoped.inheritance()) {
                 Some((resolved_scope, value)) if value.kind() != scoped.kind() => {
                     return Err(MetadataValidationError::KindMismatch {
                         scope: resolved_scope,
@@ -250,22 +266,25 @@ fn merge_metadata_requirement(
     scope: ResourceView,
     requirement: MetadataRequirement,
     kind: MetadataKind,
+    inheritance: MetadataInheritance,
 ) {
     let scoped = metadata.entry(scope).or_default();
 
     match scoped.entry(requirement.key().clone()) {
         Entry::Vacant(entry) => {
-            entry.insert((requirement, kind));
+            entry.insert((requirement, kind, inheritance));
         }
         Entry::Occupied(mut entry) => {
-            let (existing, existing_kind) = entry.get();
+            let (existing, existing_kind, existing_inheritance) = entry.get();
             let should_require = requirement.is_required() && !existing.is_required();
             let existing_kind = *existing_kind;
+            let existing_inheritance = *existing_inheritance;
 
             if should_require {
                 entry.insert((
                     MetadataRequirement::required(requirement.key().clone()),
                     existing_kind,
+                    existing_inheritance,
                 ));
             }
         }

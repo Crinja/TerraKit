@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::resource::{MetadataKeyId, MetadataKind, ResourceView};
+use crate::resource::{MetadataInheritance, MetadataKeyId, MetadataKind, ResourceView};
 
 /// Runtime metadata values attached to one resource instance.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,16 +39,17 @@ impl ResourceMetadata {
             .and_then(|entries| entries.get(key))
     }
 
-    /// Returns one effective metadata value using inheritance.
-    pub fn get(&self, scope: &ResourceView, key: &MetadataKeyId) -> Option<&MetadataValue> {
-        self.resolve(scope, key).map(|(_, value)| value)
+    /// Returns whether one metadata key exists exactly on a scope.
+    pub fn contains_exact(&self, scope: &ResourceView, key: &MetadataKeyId) -> bool {
+        self.get_exact(scope, key).is_some()
     }
 
-    /// Resolves one metadata value using closest-scope inheritance.
-    pub fn resolve(
+    /// Resolves one metadata value using the supplied inheritance behaviour.
+    pub(crate) fn resolve(
         &self,
         scope: &ResourceView,
         key: &MetadataKeyId,
+        inheritance: MetadataInheritance,
     ) -> Option<(ResourceView, &MetadataValue)> {
         let mut current = scope.canonical();
 
@@ -61,44 +62,12 @@ impl ResourceMetadata {
                 return Some((current, value));
             }
 
+            if inheritance == MetadataInheritance::Exact {
+                return None;
+            }
+
             current = current.parent()?;
         }
-    }
-
-    /// Returns whether one effective metadata key is present.
-    pub fn contains(&self, scope: &ResourceView, key: &MetadataKeyId) -> bool {
-        self.get(scope, key).is_some()
-    }
-
-    /// Returns whether one metadata key exists exactly on a scope.
-    pub fn contains_exact(&self, scope: &ResourceView, key: &MetadataKeyId) -> bool {
-        self.get_exact(scope, key).is_some()
-    }
-
-    /// Returns all effective metadata for one resource view.
-    pub fn effective_entries(
-        &self,
-        scope: &ResourceView,
-    ) -> BTreeMap<&MetadataKeyId, &MetadataValue> {
-        let mut lineage = Vec::new();
-        let mut current = Some(scope.canonical());
-
-        while let Some(view) = current {
-            current = view.parent();
-            lineage.push(view);
-        }
-
-        let mut effective = BTreeMap::new();
-
-        for view in lineage.into_iter().rev() {
-            if let Some(entries) = self.scopes.get(&view) {
-                for (key, value) in entries {
-                    effective.insert(key, value);
-                }
-            }
-        }
-
-        effective
     }
 
     /// Iterates over all explicitly stored metadata entries.
