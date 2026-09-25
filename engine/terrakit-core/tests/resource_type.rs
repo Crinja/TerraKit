@@ -245,3 +245,102 @@ fn resource_registry_rejects_invalid_type_owned_metadata_view() {
         ))
     ));
 }
+
+#[test]
+fn resource_type_spec_rejects_duplicate_type_owned_metadata_requirements() {
+    let units = metadata_key_id("terrakit.units@1");
+    let scope = ResourceView::Root;
+    let mut registry = resource_registry();
+
+    let spec = ResourceTypeSpec::new(
+        resource_type_id("domain.duplicate-metadata@1"),
+        Schema::f32(),
+    )
+    .with_metadata(ScopedMetadataRequirementSpec::new(
+        scope.clone(),
+        MetadataRequirement::optional(units.clone()),
+    ))
+    .with_metadata(ScopedMetadataRequirementSpec::new(
+        scope.clone(),
+        MetadataRequirement::required(units.clone()),
+    ));
+
+    assert_eq!(
+        registry.register_resource_type(spec),
+        Err(ResourceRegistryError::InvalidResourceType(
+            ResourceTypeError::DuplicateMetadataRequirement { scope, key: units }
+        ))
+    );
+}
+
+#[test]
+fn resource_type_definition_canonicalizes_capability_order() {
+    let alpha = capability_id("domain.alpha-value@1");
+    let zeta = capability_id("domain.zeta-value@1");
+    let id = resource_type_id("domain.ordered@1");
+    let mut registry = resource_registry();
+
+    registry
+        .register_capability(ResourceCapabilitySpec::new(zeta.clone(), Schema::f32()))
+        .unwrap();
+    registry
+        .register_capability(ResourceCapabilitySpec::new(alpha.clone(), Schema::f32()))
+        .unwrap();
+
+    registry
+        .register_resource_type(
+            ResourceTypeSpec::new(id.clone(), Schema::f32())
+                .with_capability(CapabilityBinding::root(zeta))
+                .with_capability(CapabilityBinding::root(alpha)),
+        )
+        .unwrap();
+
+    let definition = registry.resource_type(&id).unwrap();
+    let capabilities: Vec<_> = definition
+        .capabilities()
+        .iter()
+        .map(|binding| binding.capability().as_str())
+        .collect();
+
+    assert_eq!(
+        capabilities,
+        vec!["domain.alpha-value@1", "domain.zeta-value@1"]
+    );
+}
+
+#[test]
+fn resource_type_merges_exact_type_and_capability_metadata_requirements() {
+    let units = metadata_key_id("terrakit.units@1");
+    let capability = capability_id("domain.units-value@1");
+    let id = resource_type_id("domain.units-resource@1");
+    let mut registry = resource_registry();
+
+    registry
+        .register_capability(
+            ResourceCapabilitySpec::new(capability.clone(), Schema::f32())
+                .with_metadata(MetadataRequirement::optional(units.clone())),
+        )
+        .unwrap();
+
+    registry
+        .register_resource_type(
+            ResourceTypeSpec::new(id.clone(), Schema::f32())
+                .with_metadata(ScopedMetadataRequirementSpec::root(
+                    MetadataRequirement::required(units.clone()),
+                ))
+                .with_capability(CapabilityBinding::root(capability)),
+        )
+        .unwrap();
+
+    let definition = registry.resource_type(&id).unwrap();
+
+    assert_eq!(definition.metadata_requirements().len(), 1);
+    assert_eq!(
+        definition.metadata_requirements()[0].requirement(),
+        &MetadataRequirement::required(units)
+    );
+    assert_eq!(
+        definition.metadata_requirements()[0].inheritance(),
+        MetadataInheritance::Exact
+    );
+}

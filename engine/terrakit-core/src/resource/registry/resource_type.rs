@@ -92,7 +92,7 @@ impl ResourceRegistry {
             ));
         }
 
-        let (id, schema, capabilities, type_metadata) = spec.into_parts();
+        let (id, schema, mut capabilities, type_metadata) = spec.into_parts();
 
         schema.validate().map_err(|error| {
             ResourceRegistryError::InvalidResourceType(ResourceTypeError::InvalidSchema(
@@ -101,11 +101,21 @@ impl ResourceRegistry {
         })?;
 
         let mut seen = HashSet::with_capacity(capabilities.len());
+        let mut seen_type_metadata = HashSet::with_capacity(type_metadata.len());
         let mut metadata = ResolvedMetadataMap::new();
 
         for scoped in type_metadata {
             let scope = scoped.scope().canonical();
             let requirement = scoped.requirement().clone();
+
+            if !seen_type_metadata.insert((scope.clone(), requirement.key().clone())) {
+                return Err(ResourceRegistryError::InvalidResourceType(
+                    ResourceTypeError::DuplicateMetadataRequirement {
+                        scope,
+                        key: requirement.key().clone(),
+                    },
+                ));
+            }
 
             scope.resolve(&schema).map_err(|error| {
                 ResourceRegistryError::InvalidResourceType(ResourceTypeError::InvalidMetadataView {
@@ -188,6 +198,12 @@ impl ResourceRegistry {
                     })
             })
             .collect();
+
+        capabilities.sort_by(|left, right| {
+            left.capability()
+                .cmp(right.capability())
+                .then_with(|| left.resource_view().cmp(right.resource_view()))
+        });
 
         let definition = ResourceTypeDefinition::new(id, schema, capabilities, metadata);
 
@@ -276,6 +292,10 @@ fn merge_metadata_requirement(
         }
         Entry::Occupied(mut entry) => {
             let (existing, existing_kind, existing_inheritance) = entry.get();
+
+            debug_assert_eq!(*existing_kind, kind);
+            debug_assert_eq!(*existing_inheritance, inheritance);
+
             let should_require = requirement.is_required() && !existing.is_required();
             let existing_kind = *existing_kind;
             let existing_inheritance = *existing_inheritance;

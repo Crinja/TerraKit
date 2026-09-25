@@ -135,6 +135,7 @@ impl ResourceTypeDefinition {
 
 /// Error defining one concrete resource type.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ResourceTypeError {
     /// The resource's own schema was invalid.
     InvalidSchema(Box<str>),
@@ -149,6 +150,13 @@ pub enum ResourceTypeError {
     },
     /// A resource claimed the same capability more than once.
     DuplicateCapabilityBinding(ResourceCapabilityId),
+    /// A resource type spec declared the same metadata requirement more than once.
+    DuplicateMetadataRequirement {
+        /// Resource view containing the duplicate requirement.
+        scope: ResourceView,
+        /// Metadata key declared more than once.
+        key: MetadataKeyId,
+    },
     /// The binding's view path did not exist in the resource schema.
     InvalidView {
         /// Capability whose view failed.
@@ -186,6 +194,10 @@ impl fmt::Display for ResourceTypeError {
             Self::DuplicateCapabilityBinding(id) => {
                 write!(f, "capability '{id}' is bound more than once")
             }
+            Self::DuplicateMetadataRequirement { scope, key } => write!(
+                f,
+                "metadata requirement '{key}' is declared more than once on scope {scope:?}"
+            ),
             Self::InvalidView {
                 capability,
                 message,

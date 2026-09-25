@@ -147,3 +147,28 @@ fn capability_iteration_is_deterministic() {
         ]
     );
 }
+
+#[test]
+fn capability_definition_canonicalizes_metadata_order() {
+    let producer = metadata_key_id("terrakit.producer@1");
+    let units = metadata_key_id("terrakit.units@1");
+    let id = capability_id("domain.ordered-metadata@1");
+    let mut registry = resource_registry();
+
+    registry
+        .register_capability(
+            ResourceCapabilitySpec::new(id.clone(), Schema::f32())
+                .with_metadata(MetadataRequirement::required(units))
+                .with_metadata(MetadataRequirement::optional(producer)),
+        )
+        .unwrap();
+
+    let definition = registry.capability(&id).unwrap();
+    let keys: Vec<_> = definition
+        .metadata_requirements()
+        .iter()
+        .map(|requirement| requirement.key().as_str())
+        .collect();
+
+    assert_eq!(keys, vec!["terrakit.producer@1", "terrakit.units@1"]);
+}

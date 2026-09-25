@@ -108,6 +108,8 @@ impl ResourceRegistry {
             ));
         }
 
+        resolved.sort_by(|left, right| left.key().cmp(right.key()));
+
         let definition = ResourceCapabilityDefinition::new(id, view_schema, resolved);
 
         self.capabilities
