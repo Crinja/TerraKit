@@ -73,5 +73,5 @@ pub use definition::{
     FlatHeightDefinition, HeightFieldMeshDefinition, NoiseHeightDefinition, builtin_stage_registry,
     register_builtin_stage_definitions,
 };
-pub use height::{FlatHeightStage, HeightNoiseMode, NoiseHeightStage};
+pub use height::{FlatHeightStage, HeightNoiseMode, NoiseHeightStage, HeightAmplifyMode, AmplifyHeightStage};
 pub use mesh::HeightFieldMeshStage;
