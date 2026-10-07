@@ -34,7 +34,7 @@ fn version_reporting_and_schema_discovery_work() {
     let mut registry = create_registry();
     let mut count = 0;
     assert_ok(tk_stage_registry_get_schema_count(registry, &mut count));
-    assert_eq!(count, 3);
+    assert_eq!(count, 4);
 
     let first = schema_info(registry, "terrakit.height.flat");
     let second = schema_info(registry, "terrakit.height.noise");
