@@ -1,5 +1,6 @@
 use terrakit_builtins::{
     FlatHeightDefinition, HeightFieldMeshDefinition, NoiseHeightDefinition, builtin_stage_registry,
+    definition::{AmplifyHeightDefinition, TemperatureMapDefinition},
 };
 use terrakit_core::{
     Extent2, GenerationSeed, HeightField, LodLevel, RegionCoord2, RegionLayout2, SamplingDomain,
@@ -66,7 +67,7 @@ fn source_height_field(value: f32) -> HeightField {
 fn builtin_registry_contains_all_definitions() {
     let registry = builtin_stage_registry().unwrap();
 
-    assert_eq!(registry.len(), 4);
+    assert_eq!(registry.len(), 5);
     assert!(
         registry
             .definition(&stage_type(FlatHeightDefinition::TYPE_ID))
@@ -80,6 +81,16 @@ fn builtin_registry_contains_all_definitions() {
     assert!(
         registry
             .definition(&stage_type(HeightFieldMeshDefinition::TYPE_ID))
+            .is_some()
+    );
+    assert!(
+        registry
+            .definition(&stage_type(TemperatureMapDefinition::TYPE_ID))
+            .is_some()
+    );
+    assert!(
+        registry
+            .definition(&stage_type(AmplifyHeightDefinition::TYPE_ID))
             .is_some()
     );
 }
@@ -97,6 +108,7 @@ fn builtin_registry_enumerates_schema_versions() {
             ))
             .collect::<Vec<_>>(),
         vec![
+            ("terrakit.height.amplify".to_owned(), 1),
             ("terrakit.height.flat".to_owned(), 1),
             ("terrakit.height.noise".to_owned(), 1),
             ("terrakit.height.temperature".to_owned(), 1),
