@@ -6,7 +6,7 @@ use terrakit_pipeline::{
     ValidatedStageBindings,
 };
 
-use crate::{HeightAmplifyMode, AmplifyHeightStage};
+use crate::{AmplifyHeightStage, HeightAmplifyMode};
 
 use super::{enum_option, enum_value_id, input, output, parameter, schema};
 
@@ -45,9 +45,9 @@ impl AmplifyHeightDefinition {
                 )?],
                 vec![
                     parameter(
-                        "threshold",
-                        "Starting Threshold",
-                        "Value for which amplification begins to act above or below (according to Threshold direction).",
+                        "threshold_min",
+                        "Minimum Threshold",
+                        "Minimum height value affected by amplification.",
                         ParameterType::F32 {
                             minimum: None,
                             maximum: None,
@@ -55,11 +55,14 @@ impl AmplifyHeightDefinition {
                         Some(ParameterValue::F32(0.5)),
                     )?,
                     parameter(
-                        "threshold_direction",
-                        "Reverse Threshold",
-                        "Applies the amplification to all values below the threshold value instead of those above.",
-                        ParameterType::Bool,
-                        Some(ParameterValue::Bool(false)),
+                        "threshold_max",
+                        "Maximum Threshold",
+                        "Maximum height value affected by amplification.",
+                        ParameterType::F32 {
+                            minimum: None,
+                            maximum: None,
+                        },
+                        Some(ParameterValue::F32(10.0)),
                     )?,
                     parameter(
                         "amplify_mode",
@@ -67,45 +70,39 @@ impl AmplifyHeightDefinition {
                         "Whether amplification is additive or multiplicative.",
                         ParameterType::Enum {
                             options: vec![
-                                enum_option("add",
-                                            "Additive",
-                                            "Amplification value is added to the current height."
+                                enum_option(
+                                    "add",
+                                    "Additive",
+                                    "Amplification value is added to the current height.",
                                 )?,
                                 enum_option(
                                     "multiply",
                                     "Multiplicative",
-                                    "Current height is multiplied according to amplification value. If reversed, height is dampened instead.",
+                                    "Current height is multiplied by the amplification value.",
                                 )?,
                             ],
                         },
                         Some(ParameterValue::Enum(enum_value_id("add")?)),
                     )?,
                     parameter(
-                        "amplify_direction",
-                        "Reverse Amplification",
-                        "Whether amplification is applied downwards or negatively, as opposed to upwards.",
-                        ParameterType::Bool,
-                        Some(ParameterValue::Bool(false)),
-                    )?,
-                    parameter(
                         "amplify_value",
                         "Amplification Value",
                         "Value by which height is amplified.",
-                        ParameterType::F32{
-                            minimum: Some(0.00),
-                            maximum: None
+                        ParameterType::F32 {
+                            minimum: None,
+                            maximum: None,
                         },
-                        Some(ParameterValue::F32(5.00))
+                        Some(ParameterValue::F32(5.00)),
                     )?,
                     parameter(
                         "amplify_limit",
                         "Amplification Limit",
-                        "Highest (or lowest) height that can be achieved by the amplification step.",
-                        ParameterType::F32{
+                        "Highest or lowest height that can be achieved by the amplification step.",
+                        ParameterType::F32 {
                             minimum: None,
-                            maximum: None
+                            maximum: None,
                         },
-                        Some(ParameterValue::F32(10.00))
+                        Some(ParameterValue::F32(10.00)),
                     )?,
                 ],
             )?,
@@ -125,9 +122,8 @@ impl StageDefinition for AmplifyHeightDefinition {
         bindings: &ValidatedStageBindings,
     ) -> Result<Box<dyn terrakit_pipeline::TerrainStage>, StageBuildError> {
         let amplify_mode = amplify_mode(parameters.enum_id("amplify_mode")?)?;
-        let threshold = parameters.f32("threshold")?;
-        let threshold_direction = parameters.bool("threshold_direction")?;
-        let amplify_direction = parameters.bool("amplify_direction")?;
+        let threshold_min = parameters.f32("threshold_min")?;
+        let threshold_max = parameters.f32("threshold_max")?;
         let amplify_value = parameters.f32("amplify_value")?;
         let amplify_limit = parameters.f32("amplify_limit")?;
         let stage = AmplifyHeightStage::new(
@@ -135,9 +131,8 @@ impl StageDefinition for AmplifyHeightDefinition {
             bindings.required_input("source")?,
             bindings.output("out_height")?,
             amplify_mode,
-            threshold,
-            threshold_direction,
-            amplify_direction,
+            threshold_min,
+            threshold_max,
             amplify_value,
             amplify_limit,
         )
@@ -148,7 +143,6 @@ impl StageDefinition for AmplifyHeightDefinition {
         Ok(Box::new(stage))
     }
 }
-
 
 fn amplify_mode(value: &EnumValueId) -> Result<HeightAmplifyMode, StageBuildError> {
     match value.as_str() {
