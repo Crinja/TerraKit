@@ -1,5 +1,7 @@
 //! Temperature map stage definition.
 
+use terrakit_core::SeedDomain;
+
 use terrakit_pipeline::{
     DefinitionError, ParameterType, ParameterValue, ResolvedParameterSet, ResourceKind,
     StageBuildError, StageDefinition, StageId, StageSchema, StageSchemaVersion,
@@ -37,16 +39,28 @@ impl TemperatureMapDefinition {
                     "Temperature map as a height field.",
                     ResourceKind::HeightField,
                 )?],
-                vec![parameter(
-                    "scale",
-                    "Scale",
-                    "Noise sampling scale.",
-                    ParameterType::F64 {
-                        minimum: None,
-                        maximum: None,
-                    },
-                    Some(ParameterValue::F64(0.01)),
-                )?],
+                vec![
+                    parameter(
+                        "scale",
+                        "Scale",
+                        "Noise sampling scale.",
+                        ParameterType::F64 {
+                            minimum: None,
+                            maximum: None,
+                        },
+                        Some(ParameterValue::F64(0.01)),
+                    )?,
+                    parameter(
+                        "seed_domain",
+                        "Seed Domain",
+                        "Domain used to derive the deterministic temperature noise seed.",
+                        ParameterType::U64 {
+                            minimum: None,
+                            maximum: None,
+                        },
+                        Some(ParameterValue::U64(1)),
+                    )?,
+                ],
             )?,
         })
     }
@@ -67,6 +81,7 @@ impl StageDefinition for TemperatureMapDefinition {
             stage_id,
             bindings.output("height")?,
             parameters.f64("scale")?,
+            SeedDomain::new(parameters.u64("seed_domain")?),
         )
         .map_err(|source| {
             StageBuildError::from_stage("failed to build Temperature Map stage", source)
