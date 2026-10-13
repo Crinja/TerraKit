@@ -47,6 +47,7 @@ include = [
     "TK_RESOURCE_KIND_DENSITY_FIELD",
     "TK_RESOURCE_KIND_VOXEL_VOLUME",
     "TK_RESOURCE_KIND_MESH",
+    "TK_RESOURCE_KIND_SCATTER_POINTS",
     "TkSamplingDomain",
     "TK_SAMPLING_DOMAIN_INVALID",
     "TK_SAMPLING_DOMAIN_POINTS",
@@ -89,6 +90,8 @@ include = [
     "TkRegion2Info",
     "TkRegion3Info",
     "TkHeightFieldView",
+    "TkScatterPoint",
+    "TkScatterPointsView",
     "TkDensityFieldView",
     "TkVoxelVolumeView",
     "TkTerrainMeshView",
@@ -129,6 +132,7 @@ include = [
     "tk_generation_result_get_region_3d",
     "tk_generation_result_get_resource_kind",
     "tk_generation_result_get_height_field",
+    "tk_generation_result_get_scatter_points",
     "tk_generation_result_get_density_field",
     "tk_generation_result_get_voxel_volume",
     "tk_generation_result_get_mesh",
@@ -168,6 +172,8 @@ include = [
 "TkRegion2Info" = "tk_region_2d_info_t"
 "TkRegion3Info" = "tk_region_3d_info_t"
 "TkHeightFieldView" = "tk_height_field_view_t"
+"TkScatterPoint" = "tk_scatter_point_t"
+"TkScatterPointsView" = "tk_scatter_points_view_t"
 "TkDensityFieldView" = "tk_density_field_view_t"
 "TkVoxelVolumeView" = "tk_voxel_volume_view_t"
 "TkTerrainMeshView" = "tk_terrain_mesh_view_t"

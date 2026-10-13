@@ -68,6 +68,8 @@ pub mod definition;
 pub mod height;
 /// Mesh stage implementations.
 pub mod mesh;
+/// Object scattering stage implementations.
+pub mod scattering;
 
 pub use definition::{
     FlatHeightDefinition, HeightFieldMeshDefinition, NoiseHeightDefinition, builtin_stage_registry,
@@ -77,3 +79,4 @@ pub use height::{
     AmplifyHeightStage, FlatHeightStage, HeightAmplifyMode, HeightNoiseMode, NoiseHeightStage,
 };
 pub use mesh::HeightFieldMeshStage;
+pub use scattering::{PoissonScatterConfig, PoissonScatterStage};

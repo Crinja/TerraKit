@@ -8,12 +8,14 @@ mod amplify_height;
 mod flat_height;
 mod height_field_mesh;
 mod noise_height;
+mod poisson_scatter;
 mod temperature;
 
 pub use amplify_height::AmplifyHeightDefinition;
 pub use flat_height::FlatHeightDefinition;
 pub use height_field_mesh::HeightFieldMeshDefinition;
 pub use noise_height::NoiseHeightDefinition;
+pub use poisson_scatter::PoissonScatterDefinition;
 pub use temperature::TemperatureMapDefinition;
 
 use terrakit_pipeline::{
@@ -29,6 +31,7 @@ pub fn register_builtin_stage_definitions(
     registry.register(FlatHeightDefinition::new()?)?;
     registry.register(NoiseHeightDefinition::new()?)?;
     registry.register(HeightFieldMeshDefinition::new()?)?;
+    registry.register(PoissonScatterDefinition::new()?)?;
     registry.register(AmplifyHeightDefinition::new()?)?;
     registry.register(TemperatureMapDefinition::new()?)?;
 

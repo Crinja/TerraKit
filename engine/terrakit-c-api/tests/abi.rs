@@ -22,7 +22,7 @@ fn version_reporting_and_schema_discovery_work() {
         version,
         TkVersion {
             major: 0,
-            minor: 1,
+            minor: 2,
             patch: 0
         }
     );
@@ -380,4 +380,100 @@ fn direct_rust_generation() -> terrakit_runtime::GenerationResult {
             LodLevel::HIGHEST,
         ))
         .unwrap()
+}
+
+#[test]
+fn scatter_layout_matches_borrowed_c_view() {
+    use std::mem::{align_of, offset_of, size_of};
+    use terrakit_core::ScatterPoint;
+
+    assert_eq!(size_of::<ScatterPoint>(), size_of::<TkScatterPoint>());
+    assert_eq!(align_of::<ScatterPoint>(), align_of::<TkScatterPoint>());
+    assert_eq!(
+        offset_of!(ScatterPoint, position),
+        offset_of!(TkScatterPoint, position)
+    );
+    assert_eq!(
+        offset_of!(ScatterPoint, rotation),
+        offset_of!(TkScatterPoint, rotation)
+    );
+    assert_eq!(
+        offset_of!(ScatterPoint, scale),
+        offset_of!(TkScatterPoint, scale)
+    );
+    assert_eq!(
+        offset_of!(ScatterPoint, prototype_id),
+        offset_of!(TkScatterPoint, prototype_id)
+    );
+}
+
+#[test]
+fn scatter_pipeline_returns_interpolated_borrowed_c_placements() {
+    const SCATTER: u64 = 108;
+    let mut registry = create_registry();
+    let flat_info = schema_info(registry, "terrakit.height.flat");
+    let scatter_info = schema_info(registry, "terrakit.scatter.poisson");
+    let mut flat = create_stage(1, "terrakit.height.flat", flat_info.schema_version);
+    set_param(flat, "elevation", &param_f32(8.0));
+    assert_ok(tk_stage_construction_bind_output(
+        flat,
+        sv("height"),
+        BASE_HEIGHT,
+    ));
+
+    let mut scatter = create_stage(2, "terrakit.scatter.poisson", scatter_info.schema_version);
+    assert_ok(tk_stage_construction_bind_input(
+        scatter,
+        sv("height"),
+        BASE_HEIGHT,
+    ));
+    assert_ok(tk_stage_construction_bind_output(
+        scatter,
+        sv("scatter"),
+        SCATTER,
+    ));
+    set_param(scatter, "radius", &param_f32(2.0));
+    set_param(scatter, "prototype_id", &param_u64(17));
+
+    let mut assembler = ptr::null_mut();
+    assert_ok(tk_pipeline_assembler_create(registry, &mut assembler));
+    assert_ok(tk_pipeline_assembler_add_stage(assembler, &mut flat));
+    assert_ok(tk_pipeline_assembler_add_stage(assembler, &mut scatter));
+
+    let mut pipeline = ptr::null_mut();
+    assert_ok(tk_pipeline_assembler_finish(&mut assembler, &mut pipeline));
+    let layout = TkRegionLayout2 {
+        cell_width: 16,
+        cell_height: 16,
+        base_spacing: TkVec2F64 { x: 1.0, y: 1.0 },
+    };
+    let mut runtime = ptr::null_mut();
+    assert_ok(tk_runtime_create_2d(&mut pipeline, &layout, &mut runtime));
+    let mut result = generate_region(runtime, 62_500_000, 0, 129);
+
+    let mut kind = TK_RESOURCE_KIND_INVALID;
+    assert_ok(tk_generation_result_get_resource_kind(
+        result, SCATTER, &mut kind,
+    ));
+    assert_eq!(kind, TK_RESOURCE_KIND_SCATTER_POINTS);
+    let mut view = TkScatterPointsView::default();
+    assert_ok(tk_generation_result_get_scatter_points(
+        result, SCATTER, &mut view,
+    ));
+    assert!(view.point_count > 0);
+    assert!(!view.points.is_null());
+    // SAFETY: The generated result owns the data and is still alive.
+    let points = unsafe { std::slice::from_raw_parts(view.points, view.point_count) };
+    assert!(
+        points
+            .iter()
+            .all(|point| (point.position[1] - 8.0).abs() < 1e-5)
+    );
+    assert!(points.iter().all(|point| point.prototype_id == 17));
+    assert_eq!(view.origin.x, 1_000_000_000.0);
+    assert_eq!(view.origin.y, 0.0);
+
+    assert_ok(tk_generation_result_destroy(&mut result));
+    assert_ok(tk_runtime_destroy(&mut runtime));
+    destroy_registry(&mut registry);
 }
