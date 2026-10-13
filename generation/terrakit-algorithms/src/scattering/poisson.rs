@@ -1,22 +1,29 @@
 // Deterministic Poisson-disc object scattering.
-// Poisson-disc sampling to dprevent objects from appearing too close together.
+// Poisson-disc sampling prevents objects from appearing too close together.
 
 use super::random::{ScatterRng, random_y_rotation};
 
 use terrakit_core::ScatterPoint;
 
-use super::types::{ScatterArea, ScatterError, ScatterSettings};
+use super::types::{ScatterArea, ScatterError};
 
-// Configuration for Poisson-disc scattering.
+/// Configuration for Poisson-disc scattering.
 #[derive(Debug, Clone, Copy)]
 pub struct PoissonSettings {
-    pub seed: u64,             // Random seed.
-    pub radius: f32,           // Minimum distance between objects.
-    pub attempts: u32,         // Number of candidate attempts for each active point.
-    pub prototype_id: u32,     // Object prototype ID.
-    pub min_scale: f32,        // Minimum scale.
-    pub max_scale: f32,        // Maximum scale.
-    pub random_rotation: bool, // Whether to randomly rotate objects.
+    /// Random seed.
+    pub seed: u64,
+    /// Minimum horizontal distance between objects.
+    pub radius: f32,
+    /// Candidate attempts for each active point.
+    pub attempts: u32,
+    /// Object prototype identifier.
+    pub prototype_id: u32,
+    /// Minimum uniform scale.
+    pub min_scale: f32,
+    /// Maximum uniform scale.
+    pub max_scale: f32,
+    /// Randomize yaw.
+    pub random_rotation: bool,
 }
 
 impl Default for PoissonSettings {
@@ -34,13 +41,13 @@ impl Default for PoissonSettings {
 }
 
 impl PoissonSettings {
-    // Validates the settings.
+    /// Validates the settings.
     pub fn validate(&self) -> Result<(), ScatterError> {
         if !self.radius.is_finite() || self.radius <= 0.0 {
             return Err(ScatterError::InvalidRadius);
         }
 
-        if self.attempts == 0 {
+        if !(1..=10_000).contains(&self.attempts) {
             return Err(ScatterError::InvalidAttempts);
         }
 
@@ -56,9 +63,10 @@ impl PoissonSettings {
     }
 }
 
-// Generates Poisson-disc distributed points.
-
-// Every generated point attempts to maintain at least `radius` distance from all existing points.
+/// Generates Poisson-disc distributed points in a local XZ rectangle.
+///
+/// Each generated placement is initially at local Y=0, so terrain stages
+/// must lift it to the actual sampled surface before publishing resources.
 pub fn scatter_poisson(
     settings: PoissonSettings,
     area: ScatterArea,
@@ -69,15 +77,35 @@ pub fn scatter_poisson(
     let mut rng = ScatterRng::new(settings.seed);
 
     let cell_size = settings.radius / 2.0_f32.sqrt();
+    if !cell_size.is_finite() || cell_size <= 0.0 {
+        return Err(ScatterError::InvalidRadius);
+    }
 
-    let grid_width = (area.width() / cell_size).ceil() as usize + 1;
+    // A densely sampled large region could otherwise exhaust host memory.
+    const MAX_GRID_CELLS: usize = 4_194_304;
+    let grid_dimension = |span: f32| -> Result<usize, ScatterError> {
+        let cells = f64::from(span) / f64::from(cell_size);
+        if !cells.is_finite() || cells.ceil() >= MAX_GRID_CELLS as f64 {
+            return Err(ScatterError::GridTooLarge);
+        }
+        Ok(cells.ceil() as usize + 1)
+    };
+    let grid_width = grid_dimension(area.width())?;
+    let grid_height = grid_dimension(area.depth())?;
+    let total = grid_width
+        .checked_mul(grid_height)
+        .filter(|&count| count <= MAX_GRID_CELLS)
+        .ok_or(ScatterError::GridTooLarge)?;
 
-    let grid_height = (area.depth() / cell_size).ceil() as usize + 1;
-
-    let mut grid: Vec<Option<usize>> = vec![None; grid_width * grid_height];
+    let mut grid: Vec<Option<usize>> = Vec::new();
+    grid.try_reserve_exact(total)
+        .map_err(|_| ScatterError::GridTooLarge)?;
+    grid.resize(total, None);
 
     let mut points: Vec<[f32; 2]> = Vec::new();
     let mut active: Vec<usize> = Vec::new();
+    const MAX_TOTAL_CANDIDATES: u64 = 20_000_000;
+    let mut candidate_count = 0u64;
 
     // Initial point.
     let initial_x = rng.range_f32(area.min_x, area.max_x);
@@ -96,7 +124,7 @@ pub fn scatter_poisson(
     grid[gz * grid_width + gx] = Some(0);
 
     while !active.is_empty() {
-        let active_position = rng.range_u32(0, active.len() as u32) as usize;
+        let active_position = (rng.next_u64() % active.len() as u64) as usize;
 
         let point_index = active[active_position];
 
@@ -105,6 +133,10 @@ pub fn scatter_poisson(
         let mut found = false;
 
         for _ in 0..settings.attempts {
+            candidate_count += 1;
+            if candidate_count > MAX_TOTAL_CANDIDATES {
+                return Err(ScatterError::BudgetExceeded);
+            }
             let angle = rng.next_f32() * std::f32::consts::TAU;
 
             let distance = settings.radius * (1.0 + rng.next_f32());
@@ -209,13 +241,13 @@ fn is_valid_candidate(
 
     let min_x = gx.saturating_sub(2);
 
-    let max_x = (gx + 2).min(grid_width - 1);
+    let max_x = gx.saturating_add(2).min(grid_width - 1);
 
     let grid_height = grid.len() / grid_width;
 
     let min_z = gz.saturating_sub(2);
 
-    let max_z = (gz + 2).min(grid_height - 1);
+    let max_z = gz.saturating_add(2).min(grid_height - 1);
 
     for z in min_z..=max_z {
         for x in min_x..=max_x {

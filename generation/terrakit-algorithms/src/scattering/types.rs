@@ -1,13 +1,18 @@
-// Common types used by TerraKit object scattering.
+//! Shared algorithm-local scattering types and validation.
 
-// Configuration shared by scattering systems.
+/// Scatter options shared by uniform sampling algorithms.
 #[derive(Debug, Clone, Copy)]
 pub struct ScatterSettings {
-    pub seed: u64,             // Random seed.
-    pub prototype_id: u32,     // Object prototype ID.
-    pub min_scale: f32,        // Minimum object scale.
-    pub max_scale: f32,        // Maximum object scale.
-    pub random_rotation: bool, // Whether objects receive a random Y-axis rotation.
+    /// Deterministic random seed.
+    pub seed: u64,
+    /// Prototype identifier to assign to every placement.
+    pub prototype_id: u32,
+    /// Minimum uniform scale.
+    pub min_scale: f32,
+    /// Maximum uniform scale.
+    pub max_scale: f32,
+    /// Randomize each placement's yaw.
+    pub random_rotation: bool,
 }
 
 impl Default for ScatterSettings {
@@ -23,45 +28,34 @@ impl Default for ScatterSettings {
 }
 
 impl ScatterSettings {
-    // Validates the scattering settings.
+    /// Validates a scale range and finite options.
     pub fn validate(&self) -> Result<(), ScatterError> {
-        if !self.min_scale.is_finite() {
-            return Err(ScatterError::InvalidSettings("min_scale must be finite"));
+        if !self.min_scale.is_finite()
+            || !self.max_scale.is_finite()
+            || self.min_scale < 0.0
+            || self.max_scale < self.min_scale
+        {
+            return Err(ScatterError::InvalidSettings("invalid scale range"));
         }
-
-        if !self.max_scale.is_finite() {
-            return Err(ScatterError::InvalidSettings("max_scale must be finite"));
-        }
-
-        if self.min_scale < 0.0 {
-            return Err(ScatterError::InvalidSettings(
-                "min_scale cannot be negative",
-            ));
-        }
-
-        if self.max_scale < self.min_scale {
-            return Err(ScatterError::InvalidSettings(
-                "max_scale must be greater than or equal to min_scale",
-            ));
-        }
-
         Ok(())
     }
 }
 
-// Defines a rectangular scattering area.
+/// Axis-aligned XZ sampling bounds (in algorithm-local coordinates).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScatterArea {
-    /// Min Max X coordinate.
+    /// Minimum X coordinate.
     pub min_x: f32,
+    /// Maximum X coordinate.
     pub max_x: f32,
-    /// Min Max Z coordinate.
+    /// Minimum Z coordinate.
     pub min_z: f32,
+    /// Maximum Z coordinate.
     pub max_z: f32,
 }
 
 impl ScatterArea {
-    // Creates a new rectangular area.
+    /// Creates a rectangular scattering area.
     pub fn new(min_x: f32, max_x: f32, min_z: f32, max_z: f32) -> Self {
         Self {
             min_x,
@@ -71,43 +65,38 @@ impl ScatterArea {
         }
     }
 
-    // Returns the width of the area.
+    /// Returns the rectangle's X span.
     pub fn width(&self) -> f32 {
         self.max_x - self.min_x
     }
 
-    // Returns the depth of the area.
+    /// Returns the rectangle's Z span.
     pub fn depth(&self) -> f32 {
         self.max_z - self.min_z
     }
 
-    // Returns the area in square world units.
+    /// Returns the rectangle's XZ area.
     pub fn area(&self) -> f32 {
         self.width().abs() * self.depth().abs()
     }
 
-    // Validates the area.
+    /// Checks the area has finite, strictly ordered bounds and finite spans.
     pub fn validate(&self) -> Result<(), ScatterError> {
         if !self.min_x.is_finite()
             || !self.max_x.is_finite()
             || !self.min_z.is_finite()
             || !self.max_z.is_finite()
+            || self.max_x <= self.min_x
+            || self.max_z <= self.min_z
+            || !self.width().is_finite()
+            || !self.depth().is_finite()
         {
             return Err(ScatterError::InvalidArea);
         }
-
-        if self.max_x <= self.min_x {
-            return Err(ScatterError::InvalidArea);
-        }
-
-        if self.max_z <= self.min_z {
-            return Err(ScatterError::InvalidArea);
-        }
-
         Ok(())
     }
 
-    // Converts a normalized coordinate into world space.
+    /// Converts normalized XZ coordinates into local position coordinates.
     pub fn point_from_normalized(&self, x: f32, z: f32) -> [f32; 3] {
         [
             self.min_x + x * self.width(),
@@ -117,45 +106,52 @@ impl ScatterArea {
     }
 }
 
-// Height information for a terrain location.
+/// Terrain surface position and normal in local space.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TerrainSample {
-    pub position: [f32; 3], // World-space position.
-    pub normal: [f32; 3],   // Surface normal.
+    /// Sampled surface position.
+    pub position: [f32; 3],
+    /// Sampled surface normal.
+    pub normal: [f32; 3],
 }
 
 impl TerrainSample {
-    // Creates a terrain sample.
+    /// Creates a terrain sample.
     pub fn new(position: [f32; 3], normal: [f32; 3]) -> Self {
         Self { position, normal }
     }
 
-    // Calculates the surface slope in degrees.
-    //
-    // A flat surface has a slope of 0 degrees.
-    // A vertical surface has a slope of 90 degrees.
+    /// Returns slope degrees relative to the positive Y axis.
     pub fn slope_degrees(&self) -> f32 {
         let normal_length = (self.normal[0] * self.normal[0]
             + self.normal[1] * self.normal[1]
             + self.normal[2] * self.normal[2])
             .sqrt();
-
         if normal_length <= f32::EPSILON {
             return 90.0;
         }
-
-        let y = (self.normal[1] / normal_length).clamp(-1.0, 1.0);
-
-        y.acos().to_degrees()
+        (self.normal[1] / normal_length)
+            .clamp(-1.0, 1.0)
+            .acos()
+            .to_degrees()
     }
 }
 
-// Errors that can occur during scattering.
+/// Validation and resource-budget errors from scattering algorithms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScatterError {
-    InvalidSettings(&'static str), // Invalid scattering settings.
-    InvalidArea,                   // Invalid scattering area.
-    InvalidRadius,                 // Invalid Poisson radius.
-    InvalidAttempts,               // Invalid number of attempts.
-    InvalidMask,                   // Invalid mask configuration.
+    /// A setting is incompatible or invalid.
+    InvalidSettings(&'static str),
+    /// A sampling area is non-finite or degenerate.
+    InvalidArea,
+    /// A Poisson separation radius is invalid.
+    InvalidRadius,
+    /// No candidate attempts were requested.
+    InvalidAttempts,
+    /// A mask was configured incorrectly.
+    InvalidMask,
+    /// The Poisson occupancy grid would require excessive memory.
+    GridTooLarge,
+    /// Sampling exceeded a bounded CPU-work budget.
+    BudgetExceeded,
 }

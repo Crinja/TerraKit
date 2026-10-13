@@ -1,23 +1,24 @@
-// Masks used to control where objects can be scattered.
+//! Masks used to filter generated object placements.
 
 use super::types::{ScatterError, TerrainSample};
 
-// Determines whether an object can be placed at a location.
+/// Determines whether an object can be placed at a location.
 pub trait ScatterMask {
-    // Returns true if the location is allowed.
+    /// Returns true if the location is allowed.
     fn allows(&self, position: [f32; 3]) -> bool;
 }
 
-// Allows objects only within a specific height range.
+/// Allows objects only within a specific height range.
 #[derive(Debug, Clone, Copy)]
 pub struct HeightMask {
-    // Min / Max allowed height.
+    /// Minimum height.
     pub min_height: f32,
+    /// Maximum height.
     pub max_height: f32,
 }
 
 impl HeightMask {
-    // Creates a new height mask.
+    /// Creates a new height mask.
     pub fn new(min_height: f32, max_height: f32) -> Result<Self, ScatterError> {
         if !min_height.is_finite() || !max_height.is_finite() || max_height < min_height {
             return Err(ScatterError::InvalidMask);
@@ -29,7 +30,7 @@ impl HeightMask {
         })
     }
 
-    // Tests a height value directly.
+    /// Tests a height value directly.
     pub fn allows_height(&self, height: f32) -> bool {
         height >= self.min_height && height <= self.max_height
     }
@@ -41,16 +42,17 @@ impl ScatterMask for HeightMask {
     }
 }
 
-// Allows objects only on surfaces within a slope range.
+/// Allows objects only on surfaces within a slope range.
 #[derive(Debug, Clone, Copy)]
 pub struct SlopeMask {
-    // Min / Max slope in degrees.
+    /// Minimum slope in degrees.
     pub min_slope: f32,
+    /// Maximum slope in degrees.
     pub max_slope: f32,
 }
 
 impl SlopeMask {
-    // Creates a slope mask.
+    /// Creates a slope mask.
     pub fn new(min_slope: f32, max_slope: f32) -> Result<Self, ScatterError> {
         if !min_slope.is_finite()
             || !max_slope.is_finite()
@@ -67,7 +69,7 @@ impl SlopeMask {
         })
     }
 
-    // Tests a terrain sample.
+    /// Tests a terrain sample.
     pub fn allows_sample(&self, sample: &TerrainSample) -> bool {
         let slope = sample.slope_degrees();
 
@@ -75,17 +77,17 @@ impl SlopeMask {
     }
 }
 
-// Allows objects according to a density value.
+/// Allows objects according to a density value.
 
-// This can later be fed directly from a noise node.
+/// This can later be fed directly from a noise node.
 #[derive(Debug, Clone, Copy)]
 pub struct DensityMask {
-    // Minimum density required.
+    /// Minimum density required.
     pub threshold: f32,
 }
 
 impl DensityMask {
-    // Creates a density mask.
+    /// Creates a density mask.
     pub fn new(threshold: f32) -> Result<Self, ScatterError> {
         if !threshold.is_finite() {
             return Err(ScatterError::InvalidMask);
@@ -94,32 +96,25 @@ impl DensityMask {
         Ok(Self { threshold })
     }
 
-    // Tests a density value.
+    /// Tests a density value.
     pub fn allows_density(&self, density: f32) -> bool {
         density >= self.threshold
     }
 }
 
-impl ScatterMask for DensityMask {
-    fn allows(&self, position: [f32; 3]) -> bool {
-        // A DensityMask normally needs a density input.
-        // This implementation provides a default behaviour
-        // for the generic ScatterMask interface.
-        position[1] >= self.threshold
-    }
-}
+/// Combines multiple masks using logical AND.
 
-// Combines multiple masks using logical AND.
-
-// Every mask must allow the location.
+/// Every mask must allow the location.
 #[derive(Debug, Clone, Copy)]
 pub struct CombinedMask<M1, M2> {
+    /// First required mask.
     pub first: M1,
+    /// Second required mask.
     pub second: M2,
 }
 
 impl<M1, M2> CombinedMask<M1, M2> {
-    // Creates an AND mask.
+    /// Creates an AND mask.
     pub fn new(first: M1, second: M2) -> Self {
         Self { first, second }
     }
@@ -135,15 +130,17 @@ where
     }
 }
 
-// Combines two masks using logical OR.
+/// Combines two masks using logical OR.
 #[derive(Debug, Clone, Copy)]
 pub struct AnyMask<M1, M2> {
+    /// First alternative mask.
     pub first: M1,
+    /// Second alternative mask.
     pub second: M2,
 }
 
 impl<M1, M2> AnyMask<M1, M2> {
-    // Creates an OR mask.
+    /// Creates an OR mask.
     pub fn new(first: M1, second: M2) -> Self {
         Self { first, second }
     }
@@ -159,14 +156,15 @@ where
     }
 }
 
-// Negates another mask.
+/// Negates another mask.
 #[derive(Debug, Clone, Copy)]
 pub struct NotMask<M> {
+    /// Mask whose result is inverted.
     pub mask: M,
 }
 
 impl<M> NotMask<M> {
-    // Creates a NOT mask.
+    /// Creates a NOT mask.
     pub fn new(mask: M) -> Self {
         Self { mask }
     }

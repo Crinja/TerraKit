@@ -1,4 +1,4 @@
-// TerraKit object scattering algorithms.
+//! TerraKit object-scattering algorithms.
 
 // Scattering is responsible for generating engine-independent object placement data.
 

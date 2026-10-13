@@ -1,25 +1,25 @@
-// Deterministic random object scattering.
+//! Deterministic local-coordinate scattering helpers.
 
 use terrakit_core::ScatterPoint;
 
 use super::types::{ScatterArea, ScatterError, ScatterSettings};
 
-// A small deterministic pseudo-random number generator.
+/// A small deterministic pseudo-random number generator.
 
-// SplitMix64 is fast and has good statistical properties for procedural
-// generation. It is not intended for cryptographic use.
+/// SplitMix64 is fast and has good statistical properties for procedural
+/// generation. It is not intended for cryptographic use.
 #[derive(Debug, Clone, Copy)]
 pub struct ScatterRng {
     state: u64,
 }
 
 impl ScatterRng {
-    // Creates a new deterministic RNG.
+    /// Creates a new deterministic RNG.
     pub fn new(seed: u64) -> Self {
         Self { state: seed }
     }
 
-    // Generates the next random u64.
+    /// Generates the next random u64.
     pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
 
@@ -32,7 +32,7 @@ impl ScatterRng {
         z ^ (z >> 31)
     }
 
-    // Generates a random floating-point number in [0, 1).
+    /// Generates a random floating-point number in [0, 1).
     pub fn next_f32(&mut self) -> f32 {
         let value = self.next_u64();
 
@@ -41,12 +41,12 @@ impl ScatterRng {
         bits as f32 / (1u32 << 24) as f32
     }
 
-    // Generates a floating-point value in [min, max].
+    /// Generates a floating-point value in [min, max].
     pub fn range_f32(&mut self, min: f32, max: f32) -> f32 {
         min + self.next_f32() * (max - min)
     }
 
-    // Generates an integer in [min, max).
+    /// Generates an integer in [min, max).
     pub fn range_u32(&mut self, min: u32, max: u32) -> u32 {
         if max <= min {
             return min;
@@ -56,9 +56,9 @@ impl ScatterRng {
     }
 }
 
-// Generates random scatter points throughout a rectangular area.
+/// Generates random scatter points throughout a rectangular area.
 
-// The points are uniformly distributed across the area.
+/// The points are uniformly distributed across the area.
 pub fn scatter_random(
     settings: ScatterSettings,
     area: ScatterArea,
@@ -94,7 +94,7 @@ pub fn scatter_random(
     Ok(points)
 }
 
-// Generates a random Y-axis quaternion.
+/// Generates a random Y-axis quaternion.
 pub fn random_y_rotation(rng: &mut ScatterRng) -> [f32; 4] {
     let angle = rng.next_f32() * std::f32::consts::TAU;
 
