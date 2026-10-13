@@ -530,7 +530,7 @@ impl Default for TkHeightFieldView {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TkScatterPoint {
-    /// World-space position (x,y,z)
+    /// Position relative to TkScatterPointsView.origin (x,y,z).
     pub position: [f32; 3],
     /// Quaternion rotation (x,y,z,w)
     pub rotation: [f32; 4],
@@ -544,6 +544,8 @@ pub struct TkScatterPoint {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct TkScatterPointsView {
+    /// Precise world-space origin to add to each local placement.
+    pub origin: TkVec3F64,
     /// Borrowed contiguous scatter-point pointer.
     pub points: *const TkScatterPoint,
     /// Number of scatter points.
@@ -553,6 +555,7 @@ pub struct TkScatterPointsView {
 impl Default for TkScatterPointsView {
     fn default() -> Self {
         Self {
+            origin: TkVec3F64::default(),
             points: std::ptr::null(),
             point_count: 0,
         }

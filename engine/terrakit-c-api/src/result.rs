@@ -167,6 +167,7 @@ pub extern "C" fn tk_generation_result_get_scatter_points(
 
         let out = out_ref(out_view, "out_view")?;
 
+        *out = TkScatterPointsView::default();
         *out = scatter_points_view(points);
 
         Ok(())
@@ -296,6 +297,7 @@ fn height_field_view(field: &HeightField) -> TkHeightFieldView {
 
 fn scatter_points_view(points: &ScatterPoints) -> TkScatterPointsView {
     TkScatterPointsView {
+        origin: points.origin().into(),
         points: slice_pointer(points.points()).cast(),
         point_count: points.len(),
     }
