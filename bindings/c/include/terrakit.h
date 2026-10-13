@@ -520,6 +520,46 @@ typedef struct tk_height_field_view_t {
 } tk_height_field_view_t;
 
 /**
+ * One engine-independent object placement point.
+ */
+typedef struct tk_scatter_point_t {
+  /**
+   * Position relative to TkScatterPointsView.origin (x,y,z).
+   */
+  float position[3];
+  /**
+   * Quaternion rotation (x,y,z,w)
+   */
+  float rotation[4];
+  /**
+   * X,Y,Z scales
+   */
+  float scale[3];
+  /**
+   * Identifier of the object prototype to instantiate.
+   */
+  uint32_t prototype_id;
+} tk_scatter_point_t;
+
+/**
+ * Borrowed immutable scatter-point view.
+ */
+typedef struct tk_scatter_points_view_t {
+  /**
+   * Precise world-space origin to add to each local placement.
+   */
+  struct tk_vec3_f64_t origin;
+  /**
+   * Borrowed contiguous scatter-point pointer.
+   */
+  const struct tk_scatter_point_t *points;
+  /**
+   * Number of scatter points.
+   */
+  size_t point_count;
+} tk_scatter_points_view_t;
+
+/**
  * Borrowed immutable density-field view.
  */
 typedef struct tk_density_field_view_t {
@@ -906,6 +946,11 @@ typedef struct tk_version_t {
 #define TK_RESOURCE_KIND_MESH 4
 
 /**
+ * Scatter-point resource kind.
+ */
+#define TK_RESOURCE_KIND_SCATTER_POINTS 5
+
+/**
  * Invalid or unknown sampling domain.
  */
 #define TK_SAMPLING_DOMAIN_INVALID 0
@@ -1186,6 +1231,14 @@ tk_status_t tk_generation_result_get_height_field(const struct tk_generation_res
                                                   struct tk_height_field_view_t *out_view);
 
 /**
+ * Returns a borrowed immutable scatter-point view for a generated resource.
+ */
+TK_API
+tk_status_t tk_generation_result_get_scatter_points(const struct tk_generation_result_t *result,
+                                                    uint64_t resource_key,
+                                                    struct tk_scatter_points_view_t *out_view);
+
+/**
  * Returns a borrowed immutable density-field view for a generated resource.
  */
 TK_API
@@ -1254,7 +1307,7 @@ tk_status_t tk_runtime_generate_3d(struct tk_runtime_t *runtime,
 TK_API tk_status_t tk_runtime_destroy(struct tk_runtime_t **runtime);
 
 /**
- * Writes the embedding ABI version, currently `0.1.0`.
+ * Writes the embedding ABI version, currently `0.2.0`.
  */
 TK_API tk_status_t tk_get_abi_version(struct tk_version_t *out_version);
 
