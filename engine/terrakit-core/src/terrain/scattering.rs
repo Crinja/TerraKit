@@ -1,62 +1,68 @@
-// Scatter placement resources.
-// These types describe objects that should be placed on generated terrain.
-// They contain no engine-specific information such as Unity GameObjects or
-// Unreal actors.
+//! Engine-independent object placement resources.
 
-/// A single generated scatter placement.
+use crate::Vector3F64;
 
-/// A scatter point describes where an object should be placed, how it should
-/// be rotated and scaled, and which object prototype should be used.
+/// One generated placement. The position is local to its collection's origin.
+///
+/// The layout is shared with the borrowed C ABI scatter-point view. Do not
+/// reorder or change fields without an ABI compatibility review.
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScatterPoint {
-    /// World-space position of the object.
+    /// Position relative to `ScatterPoints::origin()`.
     pub position: [f32; 3],
-
-    /// Object rotation represented as an XYZW quaternion.
+    /// Quaternion rotation in XYZW order.
     pub rotation: [f32; 4],
-
-    /// Object scale represented as XYZ values.
+    /// Non-uniform scale in XYZ order.
     pub scale: [f32; 3],
-
-    /// Identifier used to select the object prototype.
-
-    /// The meaning of this ID is decided by the host engine or application.
+    /// Prototype identifier whose interpretation belongs to the host.
     pub prototype_id: u32,
 }
 
-/// A collection of generated scatter placements.
+/// Origin-relative placement collection with precise world coordinates.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ScatterPoints {
+    origin: Vector3F64,
     points: Vec<ScatterPoint>,
 }
 
 impl ScatterPoints {
-    /// Creates an empty scatter-point collection.
+    /// Creates an empty collection at the world origin.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates scatter points from an existing vector.
+    /// Creates points relative to the world origin.
     pub fn from_vec(points: Vec<ScatterPoint>) -> Self {
-        Self { points }
+        Self::with_origin(Vector3F64::ZERO, points)
     }
 
-    /// Returns all scatter points.
+    /// Creates points whose positions are relative to the given world origin.
+    pub fn with_origin(origin: Vector3F64, points: Vec<ScatterPoint>) -> Self {
+        Self { origin, points }
+    }
+
+    /// Returns the precise world-space origin of the collection.
+    pub fn origin(&self) -> Vector3F64 {
+        self.origin
+    }
+
+    /// Returns the local scatter placements.
     pub fn points(&self) -> &[ScatterPoint] {
         &self.points
     }
 
-    /// Returns the number of scatter points.
+    /// Returns the number of placements.
     pub fn len(&self) -> usize {
         self.points.len()
     }
 
-    /// Returns true when there are no scatter points.
+    /// Returns whether the collection is empty.
     pub fn is_empty(&self) -> bool {
         self.points.is_empty()
     }
 
-    /// Consumes the collection and returns the underlying vector.
+    /// Consumes the collection, returning only the local placements.
     pub fn into_vec(self) -> Vec<ScatterPoint> {
         self.points
     }

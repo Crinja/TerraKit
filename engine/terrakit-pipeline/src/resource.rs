@@ -46,7 +46,7 @@ pub enum ResourceKind {
     /// A `terrakit_core::TerrainMesh`.
     Mesh,
 
-    /// A 'terrakit_core::ScatterPoints'
+    /// A [`terrakit_core::ScatterPoints`] collection.
     ScatterPoints,
 }
 
@@ -181,6 +181,7 @@ impl ResourceSet {
         }
     }
 
+    /// Returns scattered placements for a matching resource key.
     pub fn scatter_points(&self, key: ResourceKey) -> Option<&ScatterPoints> {
         match self.resources.get(&key) {
             Some(TerrainResource::ScatterPoints(resource)) => Some(resource),
@@ -188,6 +189,7 @@ impl ResourceSet {
         }
     }
 
+    /// Returns mutable scattered placements for a matching resource key.
     pub fn scatter_points_mut(&mut self, key: ResourceKey) -> Option<&mut ScatterPoints> {
         match self.resources.get_mut(&key) {
             Some(TerrainResource::ScatterPoints(resource)) => Some(resource),
