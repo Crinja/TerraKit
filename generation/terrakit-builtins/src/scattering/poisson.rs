@@ -1,26 +1,12 @@
 //! Poisson-disc object scattering stage implementation.
 
 use terrakit_algorithms::scattering::{
-    PoissonSettings,
-    ScatterArea,
-    ScatterError,
-    scatter_poisson,
+    PoissonSettings, ScatterArea, ScatterError, scatter_poisson,
 };
-use terrakit_core::{
-    ScatterPoints,
-    TerrainResource,
-};
+use terrakit_core::{ScatterPoints, TerrainResource};
 use terrakit_pipeline::{
-    ResourceAccess,
-    ResourceKey,
-    ResourceKind,
-    ResourceProduct,
-    ResourceRequirement,
-    ResourceSet,
-    StageContext,
-    StageError,
-    StageId,
-    TerrainStage,
+    ResourceAccess, ResourceKey, ResourceKind, ResourceProduct, ResourceRequirement, ResourceSet,
+    StageContext, StageError, StageId, TerrainStage,
 };
 
 const STAGE_NAME: &str = "poisson_scatter";
@@ -61,12 +47,7 @@ impl PoissonScatterStage {
         max_scale: f32,
         random_rotation: bool,
     ) -> Result<Self, StageError> {
-        validate_configuration(
-            radius,
-            attempts,
-            min_scale,
-            max_scale,
-        )?;
+        validate_configuration(radius, attempts, min_scale, max_scale)?;
 
         if input == output {
             return Err(StageError::new(
@@ -91,10 +72,7 @@ impl PoissonScatterStage {
                 ResourceAccess::Read,
             )],
 
-            products: [ResourceProduct::create(
-                output,
-                ResourceKind::ScatterPoints,
-            )],
+            products: [ResourceProduct::create(output, ResourceKind::ScatterPoints)],
         })
     }
 
@@ -153,14 +131,9 @@ impl TerrainStage for PoissonScatterStage {
         context: &StageContext,
         resources: &mut ResourceSet,
     ) -> Result<(), StageError> {
-        context
-            .region()
-            .as_region2()
-            .ok_or_else(|| {
-                StageError::new(
-                    "Poisson scatter stage requires a 2D generation region",
-                )
-            })?;
+        context.region().as_region2().ok_or_else(|| {
+            StageError::new("Poisson scatter stage requires a 2D generation region")
+        })?;
 
         if resources.contains(self.output) {
             return Err(StageError::new(format!(
@@ -197,18 +170,13 @@ impl TerrainStage for PoissonScatterStage {
             random_rotation: self.random_rotation,
         };
 
-        let points = scatter_poisson(settings, area)
-            .map_err(|error| scatter_stage_error(
-                "failed to generate Poisson scatter points",
-                error,
-            ))?;
+        let points = scatter_poisson(settings, area).map_err(|error| {
+            scatter_stage_error("failed to generate Poisson scatter points", error)
+        })?;
 
         let points = ScatterPoints::from_vec(points);
 
-        resources.insert(
-            self.output,
-            TerrainResource::ScatterPoints(points),
-        );
+        resources.insert(self.output, TerrainResource::ScatterPoints(points));
 
         Ok(())
     }
@@ -244,11 +212,7 @@ fn height_field_scatter_area(
         }
     }
 
-    if !min_x.is_finite()
-        || !max_x.is_finite()
-        || !min_z.is_finite()
-        || !max_z.is_finite()
-    {
+    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
         return Err(StageError::new(
             "height field produced non-finite scattering bounds",
         ));
@@ -316,10 +280,7 @@ fn validate_configuration(
     Ok(())
 }
 
-fn scatter_stage_error(
-    operation: &str,
-    error: ScatterError,
-) -> StageError {
+fn scatter_stage_error(operation: &str, error: ScatterError) -> StageError {
     StageError::new(format!("{operation}: {error:?}"))
 }
 
@@ -328,14 +289,8 @@ mod tests {
     use super::*;
 
     use terrakit_core::{
-        Extent2,
-        GenerationRegion,
-        GenerationSeed,
-        LodLevel,
-        RegionCoord2,
-        RegionLayout2,
-        RegionRequest2,
-        Vector2F64,
+        Extent2, GenerationRegion, GenerationSeed, LodLevel, RegionCoord2, RegionLayout2,
+        RegionRequest2, Vector2F64,
     };
 
     fn context2(width: u32, height: u32) -> StageContext {
@@ -347,10 +302,7 @@ mod tests {
 
         let region = GenerationRegion::Region2(
             layout
-                .resolve(RegionRequest2::new(
-                    RegionCoord2::ZERO,
-                    LodLevel::HIGHEST,
-                ))
+                .resolve(RegionRequest2::new(RegionCoord2::ZERO, LodLevel::HIGHEST))
                 .unwrap(),
         );
 
@@ -362,12 +314,7 @@ mod tests {
         let context = context2(20, 20);
 
         let mut height_stage =
-            crate::FlatHeightStage::standard(
-                StageId(1),
-                ResourceKey::HEIGHT,
-                0.0,
-            )
-            .unwrap();
+            crate::FlatHeightStage::standard(StageId(1), ResourceKey::HEIGHT, 0.0).unwrap();
 
         let mut scatter_stage = PoissonScatterStage::new(
             StageId(2),
@@ -385,14 +332,10 @@ mod tests {
         let mut resources = ResourceSet::new();
 
         // First create the terrain.
-        height_stage
-            .execute(&context, &mut resources)
-            .unwrap();
+        height_stage.execute(&context, &mut resources).unwrap();
 
         // Then scatter objects across the terrain.
-        scatter_stage
-            .execute(&context, &mut resources)
-            .unwrap();
+        scatter_stage.execute(&context, &mut resources).unwrap();
 
         let Some(TerrainResource::ScatterPoints(points)) =
             resources.get(ResourceKey::SCATTER_POINTS)

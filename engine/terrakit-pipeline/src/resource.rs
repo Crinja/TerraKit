@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use terrakit_core::{DensityField, HeightField, ScatterPoints, TerrainMesh, TerrainResource, VoxelVolume};
+use terrakit_core::{
+    DensityField, HeightField, ScatterPoints, TerrainMesh, TerrainResource, VoxelVolume,
+};
 
 /// Stable identifier for a resource within one pipeline execution.
 #[repr(transparent)]

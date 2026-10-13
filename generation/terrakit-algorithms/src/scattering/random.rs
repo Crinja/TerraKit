@@ -2,11 +2,7 @@
 
 use terrakit_core::ScatterPoint;
 
-use super::types::{
-    ScatterArea,
-    ScatterError,
-    ScatterSettings,
-};
+use super::types::{ScatterArea, ScatterError, ScatterSettings};
 
 // A small deterministic pseudo-random number generator.
 
@@ -29,11 +25,9 @@ impl ScatterRng {
 
         let mut z = self.state;
 
-        z = (z ^ (z >> 30))
-            .wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
 
-        z = (z ^ (z >> 27))
-            .wrapping_mul(0x94D049BB133111EB);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
 
         z ^ (z >> 31)
     }
@@ -81,10 +75,7 @@ pub fn scatter_random(
         let x = rng.range_f32(area.min_x, area.max_x);
         let z = rng.range_f32(area.min_z, area.max_z);
 
-        let scale = rng.range_f32(
-            settings.min_scale,
-            settings.max_scale,
-        );
+        let scale = rng.range_f32(settings.min_scale, settings.max_scale);
 
         let rotation = if settings.random_rotation {
             random_y_rotation(&mut rng)
@@ -109,10 +100,5 @@ pub fn random_y_rotation(rng: &mut ScatterRng) -> [f32; 4] {
 
     let half = angle * 0.5;
 
-    [
-        0.0,
-        half.sin(),
-        0.0,
-        half.cos(),
-    ]
+    [0.0, half.sin(), 0.0, half.cos()]
 }

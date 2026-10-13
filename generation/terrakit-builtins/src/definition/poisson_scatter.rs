@@ -1,16 +1,8 @@
 //! Schema and factory for the built-in Poisson scatter stage.
 
 use terrakit_pipeline::{
-    DefinitionError,
-    ParameterType,
-    ParameterValue,
-    ResolvedParameterSet,
-    ResourceKind,
-    StageBuildError,
-    StageDefinition,
-    StageId,
-    StageSchema,
-    StageSchemaVersion,
+    DefinitionError, ParameterType, ParameterValue, ResolvedParameterSet, ResourceKind,
+    StageBuildError, StageDefinition, StageId, StageSchema, StageSchemaVersion,
     ValidatedStageBindings,
 };
 
@@ -35,22 +27,18 @@ impl PoissonScatterDefinition {
                 "Poisson Scatter",
                 "Scattering",
                 "Places objects across a height field using Poisson-disc sampling.",
-                vec![
-                    input(
-                        "height",
-                        "Height",
-                        "Height field used as the surface for scattering.",
-                        ResourceKind::HeightField,
-                    )?,
-                ],
-                vec![
-                    output(
-                        "scatter",
-                        "Scatter",
-                        "Generated object placement points.",
-                        ResourceKind::ScatterPoints,
-                    )?,
-                ],
+                vec![input(
+                    "height",
+                    "Height",
+                    "Height field used as the surface for scattering.",
+                    ResourceKind::HeightField,
+                )?],
+                vec![output(
+                    "scatter",
+                    "Scatter",
+                    "Generated object placement points.",
+                    ResourceKind::ScatterPoints,
+                )?],
                 vec![
                     parameter(
                         "radius",
@@ -129,25 +117,19 @@ impl StageDefinition for PoissonScatterDefinition {
         let attempts = parameters.u64("attempts")?;
 
         let attempts = u32::try_from(attempts).map_err(|_| {
-            StageBuildError::new(
-                "attempts must fit within a 32-bit unsigned integer",
-            )
+            StageBuildError::new("attempts must fit within a 32-bit unsigned integer")
         })?;
 
         let prototype_id = parameters.u64("prototype_id")?;
 
         let prototype_id = u32::try_from(prototype_id).map_err(|_| {
-            StageBuildError::new(
-                "prototype_id must fit within a 32-bit unsigned integer",
-            )
+            StageBuildError::new("prototype_id must fit within a 32-bit unsigned integer")
         })?;
 
         let stage = PoissonScatterStage::new(
             stage_id,
             bindings.input("height").ok_or_else(|| {
-                StageBuildError::new(
-                    "Poisson Scatter is missing the required height input binding",
-                )
+                StageBuildError::new("Poisson Scatter is missing the required height input binding")
             })?,
             bindings.output("scatter")?,
             parameters.f32("radius")?,
@@ -158,10 +140,7 @@ impl StageDefinition for PoissonScatterDefinition {
             parameters.bool("random_rotation")?,
         )
         .map_err(|source| {
-            StageBuildError::from_stage(
-                "failed to build Poisson Scatter stage",
-                source,
-            )
+            StageBuildError::from_stage("failed to build Poisson Scatter stage", source)
         })?;
 
         Ok(Box::new(stage))

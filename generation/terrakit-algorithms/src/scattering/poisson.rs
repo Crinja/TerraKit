@@ -1,28 +1,21 @@
 // Deterministic Poisson-disc object scattering.
 // Poisson-disc sampling to dprevent objects from appearing too close together.
 
-use super::random::{
-    random_y_rotation,
-    ScatterRng,
-};
+use super::random::{ScatterRng, random_y_rotation};
 
 use terrakit_core::ScatterPoint;
 
-use super::types::{
-    ScatterArea,
-    ScatterError,
-    ScatterSettings,
-};
+use super::types::{ScatterArea, ScatterError, ScatterSettings};
 
 // Configuration for Poisson-disc scattering.
 #[derive(Debug, Clone, Copy)]
-pub struct PoissonSettings {   
-    pub seed: u64, // Random seed.   
-    pub radius: f32, // Minimum distance between objects.  
-    pub attempts: u32, // Number of candidate attempts for each active point.  
-    pub prototype_id: u32, // Object prototype ID. 
-    pub min_scale: f32, // Minimum scale.
-    pub max_scale: f32, // Maximum scale.
+pub struct PoissonSettings {
+    pub seed: u64,             // Random seed.
+    pub radius: f32,           // Minimum distance between objects.
+    pub attempts: u32,         // Number of candidate attempts for each active point.
+    pub prototype_id: u32,     // Object prototype ID.
+    pub min_scale: f32,        // Minimum scale.
+    pub max_scale: f32,        // Maximum scale.
     pub random_rotation: bool, // Whether to randomly rotate objects.
 }
 
@@ -56,9 +49,7 @@ impl PoissonSettings {
             || self.min_scale < 0.0
             || self.max_scale < self.min_scale
         {
-            return Err(ScatterError::InvalidSettings(
-                "invalid scale range",
-            ));
+            return Err(ScatterError::InvalidSettings("invalid scale range"));
         }
 
         Ok(())
@@ -79,47 +70,33 @@ pub fn scatter_poisson(
 
     let cell_size = settings.radius / 2.0_f32.sqrt();
 
-    let grid_width =
-        (area.width() / cell_size).ceil() as usize + 1;
+    let grid_width = (area.width() / cell_size).ceil() as usize + 1;
 
-    let grid_height =
-        (area.depth() / cell_size).ceil() as usize + 1;
+    let grid_height = (area.depth() / cell_size).ceil() as usize + 1;
 
-    let mut grid: Vec<Option<usize>> =
-        vec![None; grid_width * grid_height];
+    let mut grid: Vec<Option<usize>> = vec![None; grid_width * grid_height];
 
     let mut points: Vec<[f32; 2]> = Vec::new();
     let mut active: Vec<usize> = Vec::new();
 
     // Initial point.
-    let initial_x =
-        rng.range_f32(area.min_x, area.max_x);
+    let initial_x = rng.range_f32(area.min_x, area.max_x);
 
-    let initial_z =
-        rng.range_f32(area.min_z, area.max_z);
+    let initial_z = rng.range_f32(area.min_z, area.max_z);
 
     let initial = [initial_x, initial_z];
 
     points.push(initial);
     active.push(0);
 
-    let gx = grid_x(
-        initial[0],
-        &area,
-        cell_size,
-    );
+    let gx = grid_x(initial[0], &area, cell_size);
 
-    let gz = grid_z(
-        initial[1],
-        &area,
-        cell_size,
-    );
+    let gz = grid_z(initial[1], &area, cell_size);
 
     grid[gz * grid_width + gx] = Some(0);
 
     while !active.is_empty() {
-        let active_position =
-            rng.range_u32(0, active.len() as u32) as usize;
+        let active_position = rng.range_u32(0, active.len() as u32) as usize;
 
         let point_index = active[active_position];
 
@@ -128,12 +105,9 @@ pub fn scatter_poisson(
         let mut found = false;
 
         for _ in 0..settings.attempts {
-            let angle =
-                rng.next_f32() * std::f32::consts::TAU;
+            let angle = rng.next_f32() * std::f32::consts::TAU;
 
-            let distance =
-                settings.radius
-                    * (1.0 + rng.next_f32());
+            let distance = settings.radius * (1.0 + rng.next_f32());
 
             let candidate = [
                 origin[0] + angle.cos() * distance,
@@ -161,20 +135,11 @@ pub fn scatter_poisson(
             points.push(candidate);
             active.push(new_index);
 
-            let gx = grid_x(
-                candidate[0],
-                &area,
-                cell_size,
-            );
+            let gx = grid_x(candidate[0], &area, cell_size);
 
-            let gz = grid_z(
-                candidate[1],
-                &area,
-                cell_size,
-            );
+            let gz = grid_z(candidate[1], &area, cell_size);
 
-            grid[gz * grid_width + gx] =
-                Some(new_index);
+            grid[gz * grid_width + gx] = Some(new_index);
 
             found = true;
 
@@ -186,34 +151,21 @@ pub fn scatter_poisson(
         }
     }
 
-    let mut result =
-        Vec::with_capacity(points.len());
+    let mut result = Vec::with_capacity(points.len());
 
     for point in points {
-        let scale = rng.range_f32(
-            settings.min_scale,
-            settings.max_scale,
-        );
+        let scale = rng.range_f32(settings.min_scale, settings.max_scale);
 
-        let rotation =
-            if settings.random_rotation {
-                random_y_rotation(&mut rng)
-            } else {
-                [0.0, 0.0, 0.0, 1.0]
-            };
+        let rotation = if settings.random_rotation {
+            random_y_rotation(&mut rng)
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        };
 
         result.push(ScatterPoint {
-            position: [
-                point[0],
-                0.0,
-                point[1],
-            ],
+            position: [point[0], 0.0, point[1]],
             rotation,
-            scale: [
-                scale,
-                scale,
-                scale,
-            ],
+            scale: [scale, scale, scale],
             prototype_id: settings.prototype_id,
         });
     }
@@ -222,28 +174,17 @@ pub fn scatter_poisson(
 }
 
 // Converts world X into a grid coordinate.
-fn grid_x(
-    x: f32,
-    area: &ScatterArea,
-    cell_size: f32,
-) -> usize {
+fn grid_x(x: f32, area: &ScatterArea, cell_size: f32) -> usize {
     ((x - area.min_x) / cell_size).floor() as usize
 }
 
 // Converts world Z into a grid coordinate.
-fn grid_z(
-    z: f32,
-    area: &ScatterArea,
-    cell_size: f32,
-) -> usize {
+fn grid_z(z: f32, area: &ScatterArea, cell_size: f32) -> usize {
     ((z - area.min_z) / cell_size).floor() as usize
 }
 
 // Checks whether a point is inside the scattering area.
-fn inside_area(
-    point: [f32; 2],
-    area: &ScatterArea,
-) -> bool {
+fn inside_area(point: [f32; 2], area: &ScatterArea) -> bool {
     point[0] >= area.min_x
         && point[0] < area.max_x
         && point[1] >= area.min_z
@@ -260,51 +201,34 @@ fn is_valid_candidate(
     area: &ScatterArea,
     radius: f32,
 ) -> bool {
-    let gx = grid_x(
-        candidate[0],
-        area,
-        cell_size,
-    );
+    let gx = grid_x(candidate[0], area, cell_size);
 
-    let gz = grid_z(
-        candidate[1],
-        area,
-        cell_size,
-    );
+    let gz = grid_z(candidate[1], area, cell_size);
 
     let radius_squared = radius * radius;
 
-    let min_x =
-        gx.saturating_sub(2);
+    let min_x = gx.saturating_sub(2);
 
-    let max_x =
-        (gx + 2).min(grid_width - 1);
+    let max_x = (gx + 2).min(grid_width - 1);
 
-    let grid_height =
-        grid.len() / grid_width;
+    let grid_height = grid.len() / grid_width;
 
-    let min_z =
-        gz.saturating_sub(2);
+    let min_z = gz.saturating_sub(2);
 
-    let max_z =
-        (gz + 2).min(grid_height - 1);
+    let max_z = (gz + 2).min(grid_height - 1);
 
     for z in min_z..=max_z {
         for x in min_x..=max_x {
-            let index =
-                z * grid_width + x;
+            let index = z * grid_width + x;
 
             if let Some(point_index) = grid[index] {
                 let point = points[point_index];
 
-                let dx =
-                    candidate[0] - point[0];
+                let dx = candidate[0] - point[0];
 
-                let dz =
-                    candidate[1] - point[1];
+                let dz = candidate[1] - point[1];
 
-                let distance_squared =
-                    dx * dx + dz * dz;
+                let distance_squared = dx * dx + dz * dz;
 
                 if distance_squared < radius_squared {
                     return false;

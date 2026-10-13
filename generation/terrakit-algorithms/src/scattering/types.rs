@@ -3,10 +3,10 @@
 // Configuration shared by scattering systems.
 #[derive(Debug, Clone, Copy)]
 pub struct ScatterSettings {
-    pub seed: u64, // Random seed.
-    pub prototype_id: u32, // Object prototype ID.
-    pub min_scale: f32, // Minimum object scale.
-    pub max_scale: f32, // Maximum object scale.
+    pub seed: u64,             // Random seed.
+    pub prototype_id: u32,     // Object prototype ID.
+    pub min_scale: f32,        // Minimum object scale.
+    pub max_scale: f32,        // Maximum object scale.
     pub random_rotation: bool, // Whether objects receive a random Y-axis rotation.
 }
 
@@ -26,15 +26,11 @@ impl ScatterSettings {
     // Validates the scattering settings.
     pub fn validate(&self) -> Result<(), ScatterError> {
         if !self.min_scale.is_finite() {
-            return Err(ScatterError::InvalidSettings(
-                "min_scale must be finite",
-            ));
+            return Err(ScatterError::InvalidSettings("min_scale must be finite"));
         }
 
         if !self.max_scale.is_finite() {
-            return Err(ScatterError::InvalidSettings(
-                "max_scale must be finite",
-            ));
+            return Err(ScatterError::InvalidSettings("max_scale must be finite"));
         }
 
         if self.min_scale < 0.0 {
@@ -125,7 +121,7 @@ impl ScatterArea {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TerrainSample {
     pub position: [f32; 3], // World-space position.
-    pub normal: [f32; 3], // Surface normal.
+    pub normal: [f32; 3],   // Surface normal.
 }
 
 impl TerrainSample {
@@ -139,11 +135,10 @@ impl TerrainSample {
     // A flat surface has a slope of 0 degrees.
     // A vertical surface has a slope of 90 degrees.
     pub fn slope_degrees(&self) -> f32 {
-        let normal_length =
-            (self.normal[0] * self.normal[0]
-                + self.normal[1] * self.normal[1]
-                + self.normal[2] * self.normal[2])
-                .sqrt();
+        let normal_length = (self.normal[0] * self.normal[0]
+            + self.normal[1] * self.normal[1]
+            + self.normal[2] * self.normal[2])
+            .sqrt();
 
         if normal_length <= f32::EPSILON {
             return 90.0;
@@ -159,8 +154,8 @@ impl TerrainSample {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScatterError {
     InvalidSettings(&'static str), // Invalid scattering settings.
-    InvalidArea, // Invalid scattering area.
-    InvalidRadius, // Invalid Poisson radius.
-    InvalidAttempts, // Invalid number of attempts.
-    InvalidMask, // Invalid mask configuration.
+    InvalidArea,                   // Invalid scattering area.
+    InvalidRadius,                 // Invalid Poisson radius.
+    InvalidAttempts,               // Invalid number of attempts.
+    InvalidMask,                   // Invalid mask configuration.
 }

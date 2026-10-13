@@ -67,7 +67,7 @@ fn source_height_field(value: f32) -> HeightField {
 fn builtin_registry_contains_all_definitions() {
     let registry = builtin_stage_registry().unwrap();
 
-    assert_eq!(registry.len(), 5);
+    assert_eq!(registry.len(), 6);
     assert!(
         registry
             .definition(&stage_type(FlatHeightDefinition::TYPE_ID))
@@ -113,6 +113,7 @@ fn builtin_registry_enumerates_schema_versions() {
             ("terrakit.height.noise".to_owned(), 1),
             ("terrakit.height.temperature".to_owned(), 1),
             ("terrakit.mesh.height_field".to_owned(), 1),
+            ("terrakit.scatter.poisson".to_owned(), 1),
         ]
     );
 }

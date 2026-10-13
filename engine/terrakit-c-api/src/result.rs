@@ -1,7 +1,8 @@
 //! Generation result metadata and immutable zero-copy resource views.
 
 use terrakit_core::{
-    DensityField, HeightField, RegionDescriptor2, RegionDescriptor3, ScatterPoints, TerrainMesh, VoxelVolume,
+    DensityField, HeightField, RegionDescriptor2, RegionDescriptor3, ScatterPoints, TerrainMesh,
+    VoxelVolume,
 };
 use terrakit_pipeline::{ResourceKey, ResourceSet};
 
@@ -12,8 +13,8 @@ use crate::{
     runtime::{GenerationResultHandle, result_handle},
     types::{
         TkDensityFieldView, TkGenerationResult, TkGridTransform2, TkHeightFieldView, TkRegion2Info,
-        TkRegion3Info, TkScatterPointsView, TkTerrainMeshView, TkVec2F64, TkVoxelVolumeView, region_kind_to_tk,
-        resource_kind_to_tk, sampling_domain_to_tk,
+        TkRegion3Info, TkScatterPointsView, TkTerrainMeshView, TkVec2F64, TkVoxelVolumeView,
+        region_kind_to_tk, resource_kind_to_tk, sampling_domain_to_tk,
     },
 };
 
@@ -161,11 +162,7 @@ pub extern "C" fn tk_generation_result_get_scatter_points(
             .resources()
             .scatter_points(key)
             .ok_or_else(|| {
-                missing_or_wrong_kind(
-                    result.result.resources(),
-                    key,
-                    "scatter points",
-                )
+                missing_or_wrong_kind(result.result.resources(), key, "scatter points")
             })?;
 
         let out = out_ref(out_view, "out_view")?;

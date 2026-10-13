@@ -51,8 +51,8 @@ pub use region::{
 };
 pub use seed::{GenerationSeed, SeedDomain};
 pub use terrain::{
-    DensityField, DensitySample, HeightField, HeightSample, MeshIndex, TerrainMesh,
-    TerrainMeshParts, TerrainResource, VoxelId, VoxelVolume, ScatterPoint, ScatterPoints,
+    DensityField, DensitySample, HeightField, HeightSample, MeshIndex, ScatterPoint, ScatterPoints,
+    TerrainMesh, TerrainMeshParts, TerrainResource, VoxelId, VoxelVolume,
 };
 
 /// Convenient import surface for common TerraKit core types.

@@ -1,17 +1,8 @@
-use terrakit_algorithms::scattering::{
-    scatter_poisson,
-    PoissonSettings,
-    ScatterArea,
-};
+use terrakit_algorithms::scattering::{PoissonSettings, ScatterArea, scatter_poisson};
 
 #[test]
 fn test_poisson_scattering() {
-    let area = ScatterArea::new(
-        0.0,
-        100.0,
-        0.0,
-        100.0,
-    );
+    let area = ScatterArea::new(0.0, 100.0, 0.0, 100.0);
 
     let settings = PoissonSettings {
         seed: 12345,
@@ -23,10 +14,7 @@ fn test_poisson_scattering() {
         random_rotation: true,
     };
 
-    let points = scatter_poisson(
-        settings,
-        area,
-    ).unwrap();
+    let points = scatter_poisson(settings, area).unwrap();
 
     assert!(!points.is_empty());
 
