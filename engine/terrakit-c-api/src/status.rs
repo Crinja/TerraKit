@@ -59,6 +59,8 @@ pub const TK_RESOURCE_KIND_DENSITY_FIELD: TkResourceKind = 2;
 pub const TK_RESOURCE_KIND_VOXEL_VOLUME: TkResourceKind = 3;
 /// Terrain-mesh resource kind.
 pub const TK_RESOURCE_KIND_MESH: TkResourceKind = 4;
+/// Scatter-point resource kind.
+pub const TK_RESOURCE_KIND_SCATTER_POINTS: TkResourceKind = 5;
 
 /// ABI sampling-domain tag.
 pub type TkSamplingDomain = i32;

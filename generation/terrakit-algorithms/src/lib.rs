@@ -46,5 +46,7 @@ pub mod interpolation;
 pub mod mesh;
 /// Noise traits, built-in samplers, and fractal sampling helpers.
 pub mod noise;
+/// Object scattering options.
+pub mod scattering;
 
 pub use error::AlgorithmError;
