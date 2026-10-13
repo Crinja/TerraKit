@@ -79,4 +79,4 @@ pub use height::{
     AmplifyHeightStage, FlatHeightStage, HeightAmplifyMode, HeightNoiseMode, NoiseHeightStage,
 };
 pub use mesh::HeightFieldMeshStage;
-pub use scattering::PoissonScatterStage;
+pub use scattering::{PoissonScatterConfig, PoissonScatterStage};

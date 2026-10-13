@@ -1,15 +1,48 @@
 //! Poisson-disc object scattering stage implementation.
 
-use terrakit_algorithms::scattering::{
-    PoissonSettings, ScatterArea, ScatterError, scatter_poisson,
+use terrakit_algorithms::{
+    hash::hash_2d,
+    scattering::{PoissonSettings, ScatterArea, ScatterError, scatter_poisson},
 };
-use terrakit_core::{ScatterPoints, TerrainResource};
+use terrakit_core::{
+    HeightField, SamplingDomain, ScatterPoints, SeedDomain, TerrainResource, Vector3F64,
+};
 use terrakit_pipeline::{
     ResourceAccess, ResourceKey, ResourceKind, ResourceProduct, ResourceRequirement, ResourceSet,
     StageContext, StageError, StageId, TerrainStage,
 };
 
 const STAGE_NAME: &str = "poisson_scatter";
+
+/// Configuration of a built-in Poisson scattering stage.
+#[derive(Debug, Clone, Copy)]
+pub struct PoissonScatterConfig {
+    /// Minimum horizontal separation of placements.
+    pub radius: f32,
+    /// Candidate attempts per active placement.
+    pub attempts: u32,
+    /// Host-controlled object prototype identifier.
+    pub prototype_id: u32,
+    /// Smallest uniform placement scale.
+    pub min_scale: f32,
+    /// Largest uniform placement scale.
+    pub max_scale: f32,
+    /// Whether to generate a randomized Y rotation.
+    pub random_rotation: bool,
+}
+
+impl Default for PoissonScatterConfig {
+    fn default() -> Self {
+        Self {
+            radius: 2.0,
+            attempts: 30,
+            prototype_id: 0,
+            min_scale: 1.0,
+            max_scale: 1.0,
+            random_rotation: true,
+        }
+    }
+}
 
 /// Terrain stage that generates object placement points using Poisson-disc
 /// scattering over a height field.
@@ -40,14 +73,14 @@ impl PoissonScatterStage {
         stage_id: StageId,
         input: ResourceKey,
         output: ResourceKey,
-        radius: f32,
-        attempts: u32,
-        prototype_id: u32,
-        min_scale: f32,
-        max_scale: f32,
-        random_rotation: bool,
+        config: PoissonScatterConfig,
     ) -> Result<Self, StageError> {
-        validate_configuration(radius, attempts, min_scale, max_scale)?;
+        validate_configuration(
+            config.radius,
+            config.attempts,
+            config.min_scale,
+            config.max_scale,
+        )?;
 
         if input == output {
             return Err(StageError::new(
@@ -59,12 +92,12 @@ impl PoissonScatterStage {
             stage_id,
             input,
             output,
-            radius,
-            attempts,
-            prototype_id,
-            min_scale,
-            max_scale,
-            random_rotation,
+            radius: config.radius,
+            attempts: config.attempts,
+            prototype_id: config.prototype_id,
+            min_scale: config.min_scale,
+            max_scale: config.max_scale,
+            random_rotation: config.random_rotation,
 
             requirements: [ResourceRequirement::required(
                 input,
@@ -76,34 +109,42 @@ impl PoissonScatterStage {
         })
     }
 
+    /// Returns the configured input.
     pub const fn input(&self) -> ResourceKey {
         self.input
     }
 
+    /// Returns the configured output.
     pub const fn output(&self) -> ResourceKey {
         self.output
     }
 
+    /// Returns the configured radius.
     pub const fn radius(&self) -> f32 {
         self.radius
     }
 
+    /// Returns the configured attempts.
     pub const fn attempts(&self) -> u32 {
         self.attempts
     }
 
+    /// Returns the configured prototype id.
     pub const fn prototype_id(&self) -> u32 {
         self.prototype_id
     }
 
+    /// Returns the configured min scale.
     pub const fn min_scale(&self) -> f32 {
         self.min_scale
     }
 
+    /// Returns the configured max scale.
     pub const fn max_scale(&self) -> f32 {
         self.max_scale
     }
 
+    /// Returns the configured random rotation.
     pub const fn random_rotation(&self) -> bool {
         self.random_rotation
     }
@@ -153,12 +194,12 @@ impl TerrainStage for PoissonScatterStage {
 
         /*
          * The current terrakit-algorithms Poisson implementation works in
-         * world-space XZ coordinates.
+         * local XZ coordinates relative to the field's f64 origin.
          *
-         * We derive a deterministic seed from the pipeline context so the
-         * same pipeline seed and region produce the same result.
+         * Deriving the seed from stage and region coordinates keeps results
+         * repeatable without cloning patterns across neighboring regions.
          */
-        let seed = context_seed(context);
+        let seed = context_seed(context, self.stage_id)?;
 
         let settings = PoissonSettings {
             seed,
@@ -170,11 +211,24 @@ impl TerrainStage for PoissonScatterStage {
             random_rotation: self.random_rotation,
         };
 
-        let points = scatter_poisson(settings, area).map_err(|error| {
+        let mut points = scatter_poisson(settings, area).map_err(|error| {
             scatter_stage_error("failed to generate Poisson scatter points", error)
         })?;
 
-        let points = ScatterPoints::from_vec(points);
+        // The algorithm works in XZ coordinates relative to the height field's
+        // precise origin. Discard samples outside a rotated terrain footprint
+        // and lift accepted placements to the interpolated surface.
+        points.retain_mut(|point| {
+            let Some(position) =
+                sample_surface_position(height_field, point.position[0], point.position[2])
+            else {
+                return false;
+            };
+            point.position = position;
+            true
+        });
+
+        let points = ScatterPoints::with_origin(height_field.transform().origin(), points);
 
         resources.insert(self.output, TerrainResource::ScatterPoints(points));
 
@@ -182,63 +236,111 @@ impl TerrainStage for PoissonScatterStage {
     }
 }
 
-/// Determines the rectangular XZ world-space area covered by a height field.
-fn height_field_scatter_area(
-    height_field: &terrakit_core::HeightField,
-) -> Result<ScatterArea, StageError> {
-    if height_field.is_empty() {
+/// Returns a local XZ bounding box of the projected height-field footprint.
+/// The bounding box is only a candidate area; positions outside the actual
+/// parallelogram are rejected by `sample_surface_position`.
+fn height_field_scatter_area(height_field: &HeightField) -> Result<ScatterArea, StageError> {
+    if height_field.width() < 2 || height_field.height() < 2 {
         return Err(StageError::new(
-            "cannot scatter objects over an empty height field",
+            "Poisson scattering needs at least 2x2 height samples",
+        ));
+    }
+    if height_field.sampling() != SamplingDomain::Points {
+        return Err(StageError::new(
+            "Poisson scattering currently requires point-sampled heights",
         ));
     }
 
+    let transform = height_field.transform();
+    let ax = transform.axis_x();
+    let az = transform.axis_y();
+    // An XZ projection must be invertible for a vertical-ray height sampler.
+    let determinant = ax.x * az.z - ax.z * az.x;
+    let axis_scale = (ax.x.abs() + ax.z.abs()) * (az.x.abs() + az.z.abs());
+    if !determinant.is_finite() || determinant.abs() <= axis_scale * 1.0e-12 {
+        return Err(StageError::new("height-field XZ axes cannot be inverted"));
+    }
+
+    let x_end = (height_field.width() - 1) as f64;
+    let z_end = (height_field.height() - 1) as f64;
+    let corners = [(0.0, 0.0), (x_end, 0.0), (0.0, z_end), (x_end, z_end)];
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut min_z = f64::INFINITY;
     let mut max_z = f64::NEG_INFINITY;
-
-    for y in 0..height_field.height() {
-        for x in 0..height_field.width() {
-            let Some(position) = height_field.base_position(x, y) else {
-                return Err(StageError::new(format!(
-                    "missing height-field position at ({x}, {y})"
-                )));
-            };
-
-            min_x = min_x.min(position.x);
-            max_x = max_x.max(position.x);
-            min_z = min_z.min(position.z);
-            max_z = max_z.max(position.z);
-        }
+    for (x, z) in corners {
+        let local_x = ax.x * x + az.x * z;
+        let local_z = ax.z * x + az.z * z;
+        min_x = min_x.min(local_x);
+        max_x = max_x.max(local_x);
+        min_z = min_z.min(local_z);
+        max_z = max_z.max(local_z);
     }
-
-    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
+    if ![min_x, max_x, min_z, max_z].iter().all(|v| v.is_finite()) {
         return Err(StageError::new(
-            "height field produced non-finite scattering bounds",
+            "height field has invalid scattering bounds",
         ));
     }
-
-    if max_x <= min_x || max_z <= min_z {
-        return Err(StageError::new(
-            "height field does not contain a valid scattering area",
-        ));
-    }
-
-    Ok(ScatterArea::new(
-        min_x as f32,
-        max_x as f32,
-        min_z as f32,
-        max_z as f32,
-    ))
+    let area = ScatterArea::new(min_x as f32, max_x as f32, min_z as f32, max_z as f32);
+    area.validate()
+        .map_err(|_| StageError::new("height-field scatter bounds are too large or degenerate"))?;
+    Ok(area)
 }
 
-/// Gets the deterministic seed used by this stage.
-///
-/// This is temporarily kept as a small adapter around the existing
-/// StageContext API. Once the scattering algorithm accepts GenerationSeed
-/// directly, this function should return that type instead of converting it.
-fn context_seed(context: &StageContext) -> u64 {
-    context.seed().value()
+/// Interpolates an elevation and returns the surface position relative to the
+/// transform origin. The query is on the base plane's XZ projection, not the
+/// surface position (which may itself move horizontally along height_axis).
+fn sample_surface_position(height_field: &HeightField, x: f32, z: f32) -> Option<[f32; 3]> {
+    let transform = height_field.transform();
+    let ax = transform.axis_x();
+    let az = transform.axis_y();
+    let determinant = ax.x * az.z - ax.z * az.x;
+    if determinant == 0.0 || !determinant.is_finite() {
+        return None;
+    }
+
+    let x = f64::from(x);
+    let z = f64::from(z);
+    let u = (x * az.z - z * az.x) / determinant;
+    let v = (z * ax.x - x * ax.z) / determinant;
+    let max_u = (height_field.width() - 1) as f64;
+    let max_v = (height_field.height() - 1) as f64;
+    if !u.is_finite() || !v.is_finite() || u < 0.0 || v < 0.0 || u > max_u || v > max_v {
+        return None;
+    }
+
+    let x0 = u.floor() as usize;
+    let z0 = v.floor() as usize;
+    let x1 = (x0 + 1).min(height_field.width() - 1);
+    let z1 = (z0 + 1).min(height_field.height() - 1);
+    let tx = u - x0 as f64;
+    let tz = v - z0 as f64;
+    let h00 = f64::from(height_field.get(x0, z0)?);
+    let h10 = f64::from(height_field.get(x1, z0)?);
+    let h01 = f64::from(height_field.get(x0, z1)?);
+    let h11 = f64::from(height_field.get(x1, z1)?);
+    let h = (h00 * (1.0 - tx) + h10 * tx) * (1.0 - tz) + (h01 * (1.0 - tx) + h11 * tx) * tz;
+    let height_axis = height_field.height_axis();
+    let local = Vector3F64::new(
+        ax.x * u + az.x * v + height_axis.x * h,
+        ax.y * u + az.y * v + height_axis.y * h,
+        ax.z * u + az.z * v + height_axis.z * h,
+    );
+    let local = [local.x as f32, local.y as f32, local.z as f32];
+    if local.iter().all(|v| v.is_finite()) {
+        Some(local)
+    } else {
+        None
+    }
+}
+
+/// Derives a stable, independent Poisson seed for each stage and region.
+/// Region coordinates are hashed explicitly to avoid cloned local patterns
+/// across adjacent chunks while retaining deterministic regeneration.
+fn context_seed(context: &StageContext, stage_id: StageId) -> Result<u64, StageError> {
+    let coordinate = context.region2()?.coordinate();
+    let stage_seed = context.derive_seed(SeedDomain::new(stage_id.0));
+    Ok(hash_2d(stage_seed, coordinate.x, coordinate.y))
 }
 
 fn validate_configuration(
@@ -253,9 +355,9 @@ fn validate_configuration(
         ));
     }
 
-    if attempts == 0 {
+    if !(1..=10_000).contains(&attempts) {
         return Err(StageError::new(
-            "Poisson scatter attempts must be greater than zero",
+            "Poisson scatter attempts must be within 1..=10000",
         ));
     }
 
@@ -310,6 +412,32 @@ mod tests {
     }
 
     #[test]
+    fn bilinear_sampler_handles_precise_origin_and_rotation() {
+        use terrakit_core::{GridTransform2, SamplingDomain};
+        let origin = Vector3F64::new(1_000_000_000.0, 50.0, 1_000_000_000.0);
+        let transform =
+            GridTransform2::from_axes(origin, Vector3F64::Z, Vector3F64::new(-1.0, 0.0, 0.0))
+                .unwrap();
+        let field = HeightField::from_values(
+            Extent2::try_new(2, 2).unwrap(),
+            vec![1.0, 3.0, 5.0, 7.0],
+            transform,
+            SamplingDomain::Points,
+            Vector3F64::Y,
+        )
+        .unwrap();
+        assert_eq!(
+            height_field_scatter_area(&field).unwrap(),
+            ScatterArea::new(-1.0, 0.0, 0.0, 1.0)
+        );
+        let placement = sample_surface_position(&field, -0.5, 0.25).unwrap();
+        assert!((placement[0] + 0.5).abs() < 1e-6);
+        assert!((placement[1] - 3.5).abs() < 1e-6);
+        assert!((placement[2] - 0.25).abs() < 1e-6);
+        assert!(sample_surface_position(&field, 0.5, 0.25).is_none());
+    }
+
+    #[test]
     fn generates_scatter_points() {
         let context = context2(20, 20);
 
@@ -320,12 +448,12 @@ mod tests {
             StageId(2),
             ResourceKey::HEIGHT,
             ResourceKey::SCATTER_POINTS,
-            2.0,
-            30,
-            42,
-            1.0,
-            1.0,
-            true,
+            PoissonScatterConfig {
+                radius: 2.0,
+                attempts: 30,
+                prototype_id: 42,
+                ..PoissonScatterConfig::default()
+            },
         )
         .unwrap();
 

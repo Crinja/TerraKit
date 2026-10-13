@@ -1,4 +1,4 @@
-// Built-in object-scattering stage implementations.
+//! Built-in object-scattering stage implementations.
 mod poisson;
 
-pub use poisson::PoissonScatterStage;
+pub use poisson::{PoissonScatterConfig, PoissonScatterStage};

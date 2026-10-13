@@ -7,6 +7,7 @@ use terrakit_pipeline::{
 };
 
 use crate::PoissonScatterStage;
+use crate::scattering::PoissonScatterConfig;
 
 use super::{input, output, parameter, schema};
 
@@ -16,9 +17,12 @@ pub struct PoissonScatterDefinition {
 }
 
 impl PoissonScatterDefinition {
+    /// Stable identifier of the built-in Poisson scattering stage.
     pub const TYPE_ID: &'static str = "terrakit.scatter.poisson";
+    /// Version of the stage parameter schema.
     pub const SCHEMA_VERSION: StageSchemaVersion = StageSchemaVersion::V1;
 
+    /// Creates the discoverable stage definition.
     pub fn new() -> Result<Self, DefinitionError> {
         Ok(Self {
             schema: schema(
@@ -56,7 +60,7 @@ impl PoissonScatterDefinition {
                         "Number of placement attempts made for each accepted point.",
                         ParameterType::U64 {
                             minimum: Some(1),
-                            maximum: None,
+                            maximum: Some(10_000),
                         },
                         Some(ParameterValue::U64(30)),
                     )?,
@@ -66,7 +70,7 @@ impl PoissonScatterDefinition {
                         "Identifier of the object prototype to scatter.",
                         ParameterType::U64 {
                             minimum: Some(0),
-                            maximum: None,
+                            maximum: Some(u32::MAX as u64),
                         },
                         Some(ParameterValue::U64(0)),
                     )?,
@@ -132,12 +136,14 @@ impl StageDefinition for PoissonScatterDefinition {
                 StageBuildError::new("Poisson Scatter is missing the required height input binding")
             })?,
             bindings.output("scatter")?,
-            parameters.f32("radius")?,
-            attempts,
-            prototype_id,
-            parameters.f32("min_scale")?,
-            parameters.f32("max_scale")?,
-            parameters.bool("random_rotation")?,
+            PoissonScatterConfig {
+                radius: parameters.f32("radius")?,
+                attempts,
+                prototype_id,
+                min_scale: parameters.f32("min_scale")?,
+                max_scale: parameters.f32("max_scale")?,
+                random_rotation: parameters.bool("random_rotation")?,
+            },
         )
         .map_err(|source| {
             StageBuildError::from_stage("failed to build Poisson Scatter stage", source)
