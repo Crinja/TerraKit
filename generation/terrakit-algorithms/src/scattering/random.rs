@@ -5,9 +5,6 @@ use terrakit_core::ScatterPoint;
 use super::types::{ScatterArea, ScatterError, ScatterSettings};
 
 /// A small deterministic pseudo-random number generator.
-
-/// SplitMix64 is fast and has good statistical properties for procedural
-/// generation. It is not intended for cryptographic use.
 #[derive(Debug, Clone, Copy)]
 pub struct ScatterRng {
     state: u64,
@@ -57,8 +54,6 @@ impl ScatterRng {
 }
 
 /// Generates random scatter points throughout a rectangular area.
-
-/// The points are uniformly distributed across the area.
 pub fn scatter_random(
     settings: ScatterSettings,
     area: ScatterArea,

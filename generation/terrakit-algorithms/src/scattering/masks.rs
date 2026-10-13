@@ -78,8 +78,6 @@ impl SlopeMask {
 }
 
 /// Allows objects according to a density value.
-
-/// This can later be fed directly from a noise node.
 #[derive(Debug, Clone, Copy)]
 pub struct DensityMask {
     /// Minimum density required.
@@ -103,8 +101,6 @@ impl DensityMask {
 }
 
 /// Combines multiple masks using logical AND.
-
-/// Every mask must allow the location.
 #[derive(Debug, Clone, Copy)]
 pub struct CombinedMask<M1, M2> {
     /// First required mask.
