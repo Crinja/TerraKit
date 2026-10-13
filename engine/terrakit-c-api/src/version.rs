@@ -6,13 +6,13 @@ use crate::{TkStatus, error::ffi_guard, ffi::out_ref, types::TkStringView, types
 
 const ABI_VERSION: TkVersion = TkVersion {
     major: 0,
-    minor: 1,
+    minor: 2,
     patch: 0,
 };
 
 const LIBRARY_VERSION_BYTES: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
-/// Writes the embedding ABI version, currently `0.1.0`.
+/// Writes the embedding ABI version, currently `0.2.0`.
 #[unsafe(no_mangle)]
 pub extern "C" fn tk_get_abi_version(out_version: *mut TkVersion) -> TkStatus {
     ffi_guard(|| {
@@ -44,7 +44,7 @@ mod tests {
     fn abi_version_is_current_development_version() {
         assert_eq!(
             (ABI_VERSION.major, ABI_VERSION.minor, ABI_VERSION.patch),
-            (0, 1, 0)
+            (0, 2, 0)
         );
     }
 
