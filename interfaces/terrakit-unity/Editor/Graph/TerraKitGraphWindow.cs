@@ -1152,7 +1152,7 @@ namespace TerraKit.Editor
                 "4. Click Generator. Choose the generation settings, then click Generate Map.\n\n" +
 
                 "5. In Results, use Region and Output to inspect generated resources. HeightField outputs are shown in Data Preview. " +
-                "For Mesh outputs, click Show Map Preview to view the complete map.\n\n" +
+                "Mesh outputs from all regions appear automatically in the Scene after successful generation.\n\n" +
 
                 "6. Save Mesh saves all Mesh outputs and materials in the selected Region, with a Region Prefab that preserves material assignments. " +
                 "Save Prefab saves all Regions and their materials as one reusable map Prefab.\n\n" +
@@ -1167,7 +1167,7 @@ namespace TerraKit.Editor
 
                 "3D mode requires compatible 3D stages. The current built-in HeightField stages are designed for 2D generation.\n\n" +
 
-                "Scene previews are temporary. Save the result if you want to keep it."
+                "Changing generation settings, node parameters or connections clears Results and the temporary Scene preview. Generate Map again to update them. Moving nodes on the canvas does not clear results. Save the result if you want to keep it."
             );
         }
 

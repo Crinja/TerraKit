@@ -51,7 +51,7 @@ The **Region** and **Output** selectors choose the result shown in the data pane
 
 When a Mesh output is selected:
 
-- **Show Map Preview** displays all generated Mesh outputs from all regions in the Scene.
+- **Generate Map** automatically displays all generated Mesh outputs from all regions in the Scene after successful generation.
 - **Save Mesh** saves every Mesh output in the selected Region, including its materials, as a Region Prefab and associated resource assets. The Output selector does not limit this save. This action does not place an instance in the Scene.
 - **Save Prefab** saves every Mesh output from all generated regions, with materials, as one map Prefab and places an instance at the Unity origin.
 

@@ -214,7 +214,7 @@ namespace TerraKit.Samples
             TerraKitGraphCompileResult result = new TerraKitGraphCompiler().Compile(Graph);
             if (!result.Success)
             {
-                Status = "Pipeline invalid:\n• " + string.Join("\n• ", result.Errors);
+                Status = "Pipeline invalid:\n• " + string.Join("\n• ", result.ErrorIssues.Select(issue => issue.Message));
                 return false;
             }
 
