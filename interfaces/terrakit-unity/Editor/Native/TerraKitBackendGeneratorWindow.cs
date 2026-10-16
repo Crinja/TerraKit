@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace TerraKit.Editor
 {
-    internal sealed class TerraKitBackendGeneratorWindow : EditorWindow
+    internal sealed partial class TerraKitBackendGeneratorWindow : EditorWindow
     {
         internal const int MaxRegionCount = 256;
         private const float RequestPanelWidth = 520f;
@@ -145,6 +145,7 @@ namespace TerraKit.Editor
             {
                 DrawContentPanelBackground(panel.rect);
                 DrawRequest();
+                DrawSettingsControls();
                 EditorGUILayout.Space(8);
                 using (new EditorGUILayout.HorizontalScope())
                 {
