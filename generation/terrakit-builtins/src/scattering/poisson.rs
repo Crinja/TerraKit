@@ -299,8 +299,12 @@ impl TerrainStage for PoissonScatterStage {
 
                     // Re-derive a deterministic uniform scale within the
                     // biome's range using the point index as the hash input.
-                    let scale =
-                        lerp_scale(biome_cfg.min_scale, biome_cfg.max_scale, seed, index as u64);
+                    let scale = lerp_scale(
+                        biome_cfg.min_scale,
+                        biome_cfg.max_scale,
+                        seed,
+                        index as u64,
+                    );
                     point.scale = [scale, scale, scale];
                 }
             }
@@ -510,12 +514,8 @@ fn lerp_scale(min_scale: f32, max_scale: f32, seed: u64, index: u64) -> f32 {
         return min_scale;
     }
     // Pack index into both halves of the hash call.
-    let hash = hash_2d(
-        GenerationSeed(seed),
-        index as i64,
-        index.wrapping_add(1) as i64,
-    );
-    let t = (hash as f32) / (u64::MAX as f32);
+    let hash = hash_2d(GenerationSeed(seed), index as i64, index.wrapping_add(1) as i64);
+                        let t = (hash as f32) / (u64::MAX as f32);
     min_scale + t * (max_scale - min_scale)
 }
 
