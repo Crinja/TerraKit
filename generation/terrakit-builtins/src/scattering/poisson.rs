@@ -52,14 +52,13 @@ impl Default for PoissonScatterConfig {
 /// When a biome field is connected, each scatter point adopts the config
 /// for its biome ID — or `default_config` if no override is registered for
 /// that ID.
-#[derive(Debug, Clone)] to #[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct BiomeScatterConfig {
     /// Optional resource key for the biome classification height field.
     pub biome_input: Option<ResourceKey>,
     /// Per-biome overrides keyed by biome ID (as stored in the biome field).
     pub biome_configs: HashMap<u32, PoissonScatterConfig>,
 }
-
 
 /// Terrain stage that generates object placement points using Poisson-disc
 /// scattering over a height field.
