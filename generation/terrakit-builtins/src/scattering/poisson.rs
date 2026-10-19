@@ -1,11 +1,14 @@
 //! Poisson-disc object scattering stage implementation.
 
+use std::collections::HashMap;
+
 use terrakit_algorithms::{
     hash::hash_2d,
     scattering::{PoissonSettings, ScatterArea, ScatterError, scatter_poisson},
 };
 use terrakit_core::{
-    HeightField, SamplingDomain, ScatterPoints, SeedDomain, TerrainResource, Vector3F64,
+    GenerationSeed, HeightField, SamplingDomain, ScatterPoints, SeedDomain, TerrainResource,
+    Vector3F64,
 };
 use terrakit_pipeline::{
     ResourceAccess, ResourceKey, ResourceKind, ResourceProduct, ResourceRequirement, ResourceSet,
@@ -44,12 +47,32 @@ impl Default for PoissonScatterConfig {
     }
 }
 
+/// Per-biome configuration for the Poisson scattering stage.
+///
+/// When a biome field is connected, each scatter point adopts the config
+/// for its biome ID — or `default_config` if no override is registered for
+/// that ID.
+#[derive(Debug, Clone)] to #[derive(Debug, Clone, Default)]
+pub struct BiomeScatterConfig {
+    /// Optional resource key for the biome classification height field.
+    pub biome_input: Option<ResourceKey>,
+    /// Per-biome overrides keyed by biome ID (as stored in the biome field).
+    pub biome_configs: HashMap<u32, PoissonScatterConfig>,
+}
+
+
 /// Terrain stage that generates object placement points using Poisson-disc
 /// scattering over a height field.
 ///
 /// The stage reads an existing height field and creates a collection of
 /// engine-independent scatter points. The actual object represented by each
 /// point is identified by `prototype_id`.
+///
+/// When a biome field is connected via [`BiomeScatterConfig`], the
+/// `prototype_id`, `min_scale`, `max_scale`, and `random_rotation` of each
+/// point are overridden by the per-biome config for that point's biome ID.
+/// Points whose biome has no registered override use the stage's default
+/// [`PoissonScatterConfig`].
 #[derive(Debug, Clone)]
 pub struct PoissonScatterStage {
     stage_id: StageId,
@@ -63,17 +86,24 @@ pub struct PoissonScatterStage {
     max_scale: f32,
     random_rotation: bool,
 
-    requirements: [ResourceRequirement; 1],
+    /// Optional biome input key and per-biome config overrides.
+    biome: BiomeScatterConfig,
+
+    requirements: Vec<ResourceRequirement>,
     products: [ResourceProduct; 1],
 }
 
 impl PoissonScatterStage {
     /// Creates a Poisson-disc scattering stage.
+    ///
+    /// Pass a [`BiomeScatterConfig`] with `biome_input: None` (or
+    /// `BiomeScatterConfig::default()`) to disable biome-aware scattering.
     pub fn new(
         stage_id: StageId,
         input: ResourceKey,
         output: ResourceKey,
         config: PoissonScatterConfig,
+        biome: BiomeScatterConfig,
     ) -> Result<Self, StageError> {
         validate_configuration(
             config.radius,
@@ -88,6 +118,33 @@ impl PoissonScatterStage {
             ));
         }
 
+        if let Some(biome_key) = biome.biome_input {
+            if biome_key == input {
+                return Err(StageError::new(
+                    "Poisson scatter biome key must be distinct from the height field key",
+                ));
+            }
+            if biome_key == output {
+                return Err(StageError::new(
+                    "Poisson scatter biome key must be distinct from the output key",
+                ));
+            }
+        }
+
+        let mut requirements = vec![ResourceRequirement::required(
+            input,
+            ResourceKind::HeightField,
+            ResourceAccess::Read,
+        )];
+
+        if let Some(biome_key) = biome.biome_input {
+            requirements.push(ResourceRequirement::optional(
+                biome_key,
+                ResourceKind::HeightField,
+                ResourceAccess::Read,
+            ));
+        }
+
         Ok(Self {
             stage_id,
             input,
@@ -98,13 +155,8 @@ impl PoissonScatterStage {
             min_scale: config.min_scale,
             max_scale: config.max_scale,
             random_rotation: config.random_rotation,
-
-            requirements: [ResourceRequirement::required(
-                input,
-                ResourceKind::HeightField,
-                ResourceAccess::Read,
-            )],
-
+            biome,
+            requirements,
             products: [ResourceProduct::create(output, ResourceKind::ScatterPoints)],
         })
     }
@@ -160,7 +212,7 @@ impl TerrainStage for PoissonScatterStage {
     }
 
     fn requirements(&self) -> &[ResourceRequirement] {
-        &self.requirements
+        self.requirements.as_slice()
     }
 
     fn products(&self) -> &[ResourceProduct] {
@@ -215,18 +267,45 @@ impl TerrainStage for PoissonScatterStage {
             scatter_stage_error("failed to generate Poisson scatter points", error)
         })?;
 
+        // Optionally look up the biome field for per-biome config overrides.
+        let biome_field: Option<&HeightField> = self
+            .biome
+            .biome_input
+            .and_then(|key| resources.height_field(key));
+
         // The algorithm works in XZ coordinates relative to the height field's
-        // precise origin. Discard samples outside a rotated terrain footprint
-        // and lift accepted placements to the interpolated surface.
-        points.retain_mut(|point| {
+        // precise origin. Discard samples outside a rotated terrain footprint,
+        // lift accepted placements to the interpolated surface, and apply any
+        // per-biome config overrides.
+        for (index, point) in points.iter_mut().enumerate() {
             let Some(position) =
                 sample_surface_position(height_field, point.position[0], point.position[2])
             else {
-                return false;
+                // Mark as out-of-bounds by setting a sentinel prototype_id.
+                point.prototype_id = u32::MAX;
+                continue;
             };
             point.position = position;
-            true
-        });
+
+            // Apply biome-specific config when a biome field is present.
+            if let Some(biome_field) = biome_field {
+                if let Some(biome_cfg) = biome_config_for_point(
+                    biome_field,
+                    point.position[0],
+                    point.position[2],
+                    &self.biome.biome_configs,
+                ) {
+                    point.prototype_id = biome_cfg.prototype_id;
+
+                    // Re-derive a deterministic uniform scale within the
+                    // biome's range using the point index as the hash input.
+                    let scale =
+                        lerp_scale(biome_cfg.min_scale, biome_cfg.max_scale, seed, index as u64);
+                    point.scale = [scale, scale, scale];
+                }
+            }
+        }
+        points.retain(|point| point.prototype_id != u32::MAX);
 
         let points = ScatterPoints::with_origin(height_field.transform().origin(), points);
 
@@ -382,6 +461,64 @@ fn validate_configuration(
     Ok(())
 }
 
+/// Samples the biome field at a given XZ position and returns the per-biome
+/// config for that biome ID, if one is registered.
+///
+/// The biome field stores biome IDs as `f32` values (rounded to the nearest
+/// integer). Returns `None` when the position falls outside the biome field,
+/// the sample cannot be read, or no config is registered for the sampled ID.
+fn biome_config_for_point<'a>(
+    biome_field: &HeightField,
+    x: f32,
+    z: f32,
+    biome_configs: &'a HashMap<u32, PoissonScatterConfig>,
+) -> Option<&'a PoissonScatterConfig> {
+    // Re-use the same inverse transform used for height sampling to convert
+    // local XZ into biome field UV coordinates.
+    let transform = biome_field.transform();
+    let ax = transform.axis_x();
+    let az = transform.axis_y();
+    let determinant = ax.x * az.z - ax.z * az.x;
+    if determinant == 0.0 || !determinant.is_finite() {
+        return None;
+    }
+
+    let xf = f64::from(x);
+    let zf = f64::from(z);
+    let u = (xf * az.z - zf * az.x) / determinant;
+    let v = (zf * ax.x - xf * ax.z) / determinant;
+    let max_u = (biome_field.width() - 1) as f64;
+    let max_v = (biome_field.height() - 1) as f64;
+    if !u.is_finite() || !v.is_finite() || u < 0.0 || v < 0.0 || u > max_u || v > max_v {
+        return None;
+    }
+
+    // Sample the nearest biome cell (nearest-neighbour, not bilinear, because
+    // biome IDs are categorical, not continuous values).
+    let col = u.round() as usize;
+    let row = v.round() as usize;
+    let biome_value = biome_field.get(col, row)?;
+    let biome_id = biome_value.round() as u32;
+
+    biome_configs.get(&biome_id)
+}
+
+/// Deterministically interpolates a scale value within `[min, max]` using a
+/// hash of the stage seed and point index, producing values in `[0.0, 1.0)`.
+fn lerp_scale(min_scale: f32, max_scale: f32, seed: u64, index: u64) -> f32 {
+    if (max_scale - min_scale).abs() < f32::EPSILON {
+        return min_scale;
+    }
+    // Pack index into both halves of the hash call.
+    let hash = hash_2d(
+        GenerationSeed(seed),
+        index as i64,
+        index.wrapping_add(1) as i64,
+    );
+    let t = (hash as f32) / (u64::MAX as f32);
+    min_scale + t * (max_scale - min_scale)
+}
+
 fn scatter_stage_error(operation: &str, error: ScatterError) -> StageError {
     StageError::new(format!("{operation}: {error:?}"))
 }
@@ -454,6 +591,7 @@ mod tests {
                 prototype_id: 42,
                 ..PoissonScatterConfig::default()
             },
+            BiomeScatterConfig::default(),
         )
         .unwrap();
 

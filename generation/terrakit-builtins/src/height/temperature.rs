@@ -156,7 +156,10 @@ impl TerrainStage for TemperatureMapStage {
                     ((Noise2D::sample(&noise, sample_x, sample_y) as f64 + 1.0) * 0.5) as f32;
 
                 // Higher elevation cools the temperature.
-                let elevation = elevation_field.get(x as usize, y as usize).unwrap_or(0.0).clamp(0.0, 1.0);
+                let elevation = elevation_field
+                    .get(x as usize, y as usize)
+                    .unwrap_or(0.0)
+                    .clamp(0.0, 1.0);
                 let temperature =
                     (noise_temperature - elevation * self.elevation_influence).clamp(0.0, 1.0);
 

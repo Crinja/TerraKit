@@ -83,4 +83,4 @@ pub use height::{
     NoiseHeightStage, TemperatureMapStage,
 };
 pub use mesh::HeightFieldMeshStage;
-pub use scattering::{PoissonScatterConfig, PoissonScatterStage};
+pub use scattering::{BiomeScatterConfig, PoissonScatterConfig, PoissonScatterStage};

@@ -74,6 +74,15 @@ fn input(
     InputPortDefinition::required(port_id(id)?, display_name, description, resource_kind)
 }
 
+fn optional_input(
+    id: &'static str,
+    display_name: &'static str,
+    description: &'static str,
+    resource_kind: ResourceKind,
+) -> Result<InputPortDefinition, DefinitionError> {
+    InputPortDefinition::optional_input(port_id(id)?, display_name, description, resource_kind)
+}
+
 fn output(
     id: &'static str,
     display_name: &'static str,
