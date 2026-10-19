@@ -62,6 +62,8 @@
 
 #![warn(missing_docs)]
 
+/// Biome classification stage implementations.
+pub mod biome;
 /// Discoverable schemas and factories for first-party built-in stages.
 pub mod definition;
 /// Height-field stage implementations.
@@ -71,12 +73,14 @@ pub mod mesh;
 /// Object scattering stage implementations.
 pub mod scattering;
 
+pub use biome::{BiomeCell, BiomeClassifierStage, BiomeGrid};
 pub use definition::{
     FlatHeightDefinition, HeightFieldMeshDefinition, NoiseHeightDefinition, builtin_stage_registry,
     register_builtin_stage_definitions,
 };
 pub use height::{
-    AmplifyHeightStage, FlatHeightStage, HeightAmplifyMode, HeightNoiseMode, NoiseHeightStage,
+    AmplifyHeightStage, FlatHeightStage, HeightAmplifyMode, HeightNoiseMode, HumidityMapStage,
+    NoiseHeightStage, TemperatureMapStage,
 };
 pub use mesh::HeightFieldMeshStage;
 pub use scattering::{PoissonScatterConfig, PoissonScatterStage};

@@ -10,7 +10,7 @@ use terrakit_pipeline::{
 
 use crate::height::TemperatureMapStage;
 
-use super::{output, parameter, schema};
+use super::{input, output, parameter, schema};
 
 /// Stage definition for generating a noise-based temperature map as a HeightField resource.
 pub struct TemperatureMapDefinition {
@@ -31,8 +31,14 @@ impl TemperatureMapDefinition {
                 Self::SCHEMA_VERSION,
                 "Temperature Map",
                 "Height",
-                "Generates a noise-based temperature map as a HeightField resource.",
-                Vec::new(),
+                "Generates a noise-based temperature map as a HeightField resource. \
+                 Accepts an elevation map to reduce temperature at higher altitudes.",
+                vec![input(
+                    "elevation",
+                    "Elevation",
+                    "Elevation height field used to cool temperature at higher altitudes.",
+                    ResourceKind::HeightField,
+                )?],
                 vec![output(
                     "height",
                     "Height",
@@ -60,6 +66,16 @@ impl TemperatureMapDefinition {
                         },
                         Some(ParameterValue::U64(1)),
                     )?,
+                    parameter(
+                        "elevation_influence",
+                        "Elevation Influence",
+                        "How much elevation reduces temperature (0.0 = none, 1.0 = full).",
+                        ParameterType::F32 {
+                            minimum: Some(0.0),
+                            maximum: Some(1.0),
+                        },
+                        Some(ParameterValue::F32(0.3)),
+                    )?,
                 ],
             )?,
         })
@@ -79,9 +95,11 @@ impl StageDefinition for TemperatureMapDefinition {
     ) -> Result<Box<dyn terrakit_pipeline::TerrainStage>, StageBuildError> {
         let stage = TemperatureMapStage::new(
             stage_id,
+            bindings.required_input("elevation")?,
             bindings.output("height")?,
             parameters.f64("scale")?,
             SeedDomain::new(parameters.u64("seed_domain")?),
+            parameters.f32("elevation_influence")?,
         )
         .map_err(|source| {
             StageBuildError::from_stage("failed to build Temperature Map stage", source)
