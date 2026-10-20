@@ -7,6 +7,7 @@
 mod amplify_height;
 mod flat_height;
 mod height_field_mesh;
+mod humidity;
 mod noise_height;
 mod poisson_scatter;
 mod temperature;
@@ -14,6 +15,7 @@ mod temperature;
 pub use amplify_height::AmplifyHeightDefinition;
 pub use flat_height::FlatHeightDefinition;
 pub use height_field_mesh::HeightFieldMeshDefinition;
+pub use humidity::HumidityMapDefinition;
 pub use noise_height::NoiseHeightDefinition;
 pub use poisson_scatter::PoissonScatterDefinition;
 pub use temperature::TemperatureMapDefinition;
@@ -34,6 +36,7 @@ pub fn register_builtin_stage_definitions(
     registry.register(PoissonScatterDefinition::new()?)?;
     registry.register(AmplifyHeightDefinition::new()?)?;
     registry.register(TemperatureMapDefinition::new()?)?;
+    registry.register(HumidityMapDefinition::new()?)?;
 
     Ok(())
 }
@@ -69,6 +72,15 @@ fn input(
     resource_kind: ResourceKind,
 ) -> Result<InputPortDefinition, DefinitionError> {
     InputPortDefinition::required(port_id(id)?, display_name, description, resource_kind)
+}
+
+fn optional_input(
+    id: &'static str,
+    display_name: &'static str,
+    description: &'static str,
+    resource_kind: ResourceKind,
+) -> Result<InputPortDefinition, DefinitionError> {
+    InputPortDefinition::optional_input(port_id(id)?, display_name, description, resource_kind)
 }
 
 fn output(

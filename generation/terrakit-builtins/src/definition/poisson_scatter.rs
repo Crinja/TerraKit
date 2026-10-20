@@ -7,9 +7,9 @@ use terrakit_pipeline::{
 };
 
 use crate::PoissonScatterStage;
-use crate::scattering::PoissonScatterConfig;
+use crate::scattering::{BiomeScatterConfig, PoissonScatterConfig};
 
-use super::{input, output, parameter, schema};
+use super::{input, optional_input, output, parameter, schema};
 
 /// Schema and factory for the Poisson scatter stage.
 pub struct PoissonScatterDefinition {
@@ -31,12 +31,21 @@ impl PoissonScatterDefinition {
                 "Poisson Scatter",
                 "Scattering",
                 "Places objects across a height field using Poisson-disc sampling.",
-                vec![input(
-                    "height",
-                    "Height",
-                    "Height field used as the surface for scattering.",
-                    ResourceKind::HeightField,
-                )?],
+                vec![
+                    input(
+                        "height",
+                        "Height",
+                        "Height field used as the surface for scattering.",
+                        ResourceKind::HeightField,
+                    )?,
+                    optional_input(
+                        "biome",
+                        "Biome",
+                        "Optional biome classification field. When connected, each scatter \
+                         point's prototype and scale are determined by its biome ID.",
+                        ResourceKind::HeightField,
+                    )?,
+                ],
                 vec![output(
                     "scatter",
                     "Scatter",
@@ -130,20 +139,26 @@ impl StageDefinition for PoissonScatterDefinition {
             StageBuildError::new("prototype_id must fit within a 32-bit unsigned integer")
         })?;
 
+        let default_config = PoissonScatterConfig {
+            radius: parameters.f32("radius")?,
+            attempts,
+            prototype_id,
+            min_scale: parameters.f32("min_scale")?,
+            max_scale: parameters.f32("max_scale")?,
+            random_rotation: parameters.bool("random_rotation")?,
+        };
+
+        let biome_config = BiomeScatterConfig {
+            biome_input: bindings.input("biome"),
+            biome_configs: Default::default(),
+        };
+
         let stage = PoissonScatterStage::new(
             stage_id,
-            bindings.input("height").ok_or_else(|| {
-                StageBuildError::new("Poisson Scatter is missing the required height input binding")
-            })?,
+            bindings.required_input("height")?,
             bindings.output("scatter")?,
-            PoissonScatterConfig {
-                radius: parameters.f32("radius")?,
-                attempts,
-                prototype_id,
-                min_scale: parameters.f32("min_scale")?,
-                max_scale: parameters.f32("max_scale")?,
-                random_rotation: parameters.bool("random_rotation")?,
-            },
+            default_config,
+            biome_config,
         )
         .map_err(|source| {
             StageBuildError::from_stage("failed to build Poisson Scatter stage", source)
